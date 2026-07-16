@@ -41,6 +41,15 @@ function ChatComponent({
 		view.getInitialAgentId() ?? undefined,
 	);
 
+	// Initial cwd / session restore target — read once at mount. Views opened
+	// via openChatViewForSession() have these set before React mounts.
+	const [initialCwd] = useState<string | undefined>(
+		view.getInitialCwd() ?? undefined,
+	);
+	const [initialSessionId] = useState<string | undefined>(
+		view.getInitialSessionId() ?? undefined,
+	);
+
 	// ============================================================
 	// Context Value
 	// ============================================================
@@ -80,11 +89,15 @@ function ChatComponent({
 				variant="sidebar"
 				viewId={viewId}
 				initialAgentId={restoredAgentId}
+				initialCwd={initialCwd}
+				initialSessionId={initialSessionId}
 				viewHost={view}
 				onRegisterCallbacks={(callbacks) =>
 					view.setCallbacks(callbacks)
 				}
 				onAgentIdChanged={(agentId) => view.setAgentId(agentId)}
+				onSessionIdChanged={(sessionId) => view.setSessionId(sessionId)}
+				onCwdChanged={(cwd) => view.setCwd(cwd)}
 				onSessionTitleChanged={handleSessionTitleChanged}
 			/>
 		</ChatContextProvider>
@@ -94,6 +107,10 @@ function ChatComponent({
 /** State stored for view persistence */
 interface ChatViewState extends Record<string, unknown> {
 	initialAgentId?: string;
+	/** Working directory to start the session in (persisted across restarts) */
+	initialCwd?: string;
+	/** Saved session to restore once the agent is ready (ephemeral, not persisted) */
+	initialSessionId?: string;
 }
 
 export class ChatView extends ItemView implements IChatViewContainer {
@@ -106,6 +123,12 @@ export class ChatView extends ItemView implements IChatViewContainer {
 	readonly viewType: ChatViewType = "sidebar";
 	/** Initial agent ID passed via state (for openNewChatViewWithAgent) */
 	private initialAgentId: string | null = null;
+	/** Initial working directory passed via state (for openChatViewForSession) */
+	private initialCwd: string | null = null;
+	/** Session to restore once ready, passed via state (ephemeral) */
+	private initialSessionId: string | null = null;
+	/** The live session id, tracked so it can be restored after an app restart */
+	private currentSessionId: string | null = null;
 	/** Callbacks to notify React when agentId is restored from workspace state */
 	private agentIdRestoredCallbacks: Set<(agentId: string) => void> =
 		new Set();
@@ -127,6 +150,17 @@ export class ChatView extends ItemView implements IChatViewContainer {
 		this.navigation = false;
 		// Use leaf.id if available, otherwise generate UUID
 		this.viewId = (leaf as { id?: string }).id ?? crypto.randomUUID();
+
+		// Views opened via openChatViewForSession receive their init payload
+		// through this side channel — Obsidian may deliver setState() only
+		// after React has mounted, which would miss mount-time initial values
+		// and re-trigger session creation.
+		const pending = plugin.consumePendingViewInit(this.viewId);
+		if (pending) {
+			this.initialAgentId = pending.agentId ?? null;
+			this.initialCwd = pending.cwd ?? null;
+			this.initialSessionId = pending.sessionId ?? null;
+		}
 	}
 
 	getViewType() {
@@ -148,6 +182,12 @@ export class ChatView extends ItemView implements IChatViewContainer {
 	getState(): ChatViewState {
 		return {
 			initialAgentId: this.initialAgentId ?? undefined,
+			// Persist the folder so the view reopens there after a restart.
+			initialCwd: this.initialCwd ?? undefined,
+			// Persist the live session so the in-progress conversation reopens
+			// after the app is closed and reopened.
+			initialSessionId:
+				this.currentSessionId ?? this.initialSessionId ?? undefined,
 		};
 	}
 
@@ -161,6 +201,8 @@ export class ChatView extends ItemView implements IChatViewContainer {
 	): Promise<void> {
 		const previousAgentId = this.initialAgentId;
 		this.initialAgentId = state.initialAgentId ?? null;
+		this.initialCwd = state.initialCwd ?? this.initialCwd;
+		this.initialSessionId = state.initialSessionId ?? this.initialSessionId;
 		await super.setState(state, result);
 
 		// Notify React when agentId is restored and differs from previous value
@@ -179,6 +221,16 @@ export class ChatView extends ItemView implements IChatViewContainer {
 		return this.initialAgentId;
 	}
 
+	/** Initial working directory for this view (from openChatViewForSession). */
+	getInitialCwd(): string | null {
+		return this.initialCwd;
+	}
+
+	/** Session to restore once the agent is ready (from openChatViewForSession). */
+	getInitialSessionId(): string | null {
+		return this.initialSessionId;
+	}
+
 	/**
 	 * Set the agent ID for this view.
 	 * Called when agent is switched to persist the change.
@@ -186,6 +238,26 @@ export class ChatView extends ItemView implements IChatViewContainer {
 	setAgentId(agentId: string): void {
 		this.initialAgentId = agentId;
 		// Request workspace to save the updated state
+		this.app.workspace.requestSaveLayout();
+	}
+
+	/**
+	 * Record the live session id so it survives an app restart. Persisted via
+	 * getState(); restored as initialSessionId on the next launch.
+	 */
+	setSessionId(sessionId: string | null): void {
+		if (this.currentSessionId === sessionId) return;
+		this.currentSessionId = sessionId;
+		this.app.workspace.requestSaveLayout();
+	}
+
+	/**
+	 * Record the live working directory. Without this the view would reopen at
+	 * the vault root and fail to restore a session that belongs to a subfolder.
+	 */
+	setCwd(cwd: string): void {
+		if (this.initialCwd === cwd) return;
+		this.initialCwd = cwd;
 		this.app.workspace.requestSaveLayout();
 	}
 

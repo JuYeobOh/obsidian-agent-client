@@ -81,11 +81,21 @@ export interface ChatPanelProps {
 	variant: "sidebar" | "floating";
 	viewId: string;
 	workingDirectory?: string;
+	/** Initial agent working directory (overrides vault root for the session cwd) */
+	initialCwd?: string;
+	/** Saved session to restore once the agent is ready */
+	initialSessionId?: string;
 	initialAgentId?: string;
 	config?: { agent?: string; model?: string };
 	onRegisterCallbacks?: (callbacks: ChatPanelCallbacks) => void;
 	/** Called when agent ID changes (sidebar only — persists in Obsidian state) */
 	onAgentIdChanged?: (agentId: string) => void;
+	/** Called when the live session id changes (sidebar only — persisted so the
+	 *  in-progress session reopens after an app restart) */
+	onSessionIdChanged?: (sessionId: string | null) => void;
+	/** Called when the agent working directory changes (sidebar only —
+	 *  persisted so the view reopens in the right folder) */
+	onCwdChanged?: (cwd: string) => void;
 	/**
 	 * Called when the derived session title may have changed (sidebar only —
 	 * triggers Obsidian to re-read getDisplayText() and update the tab header).
@@ -134,10 +144,14 @@ export function ChatPanel({
 	variant,
 	viewId,
 	workingDirectory,
+	initialCwd,
+	initialSessionId,
 	initialAgentId,
 	config,
 	onRegisterCallbacks,
 	onAgentIdChanged,
+	onSessionIdChanged,
+	onCwdChanged,
 	onSessionTitleChanged,
 	onMinimize,
 	onClose,
@@ -176,8 +190,17 @@ export function ChatPanel({
 	}, [plugin, workingDirectory]);
 
 	// Agent working directory — defaults to vault path.
-	// Can be changed independently via "New chat in directory..." action.
-	const [agentCwd, setAgentCwd] = useState(vaultPath);
+	// Can be changed independently via "New chat in directory..." action,
+	// or set at open time via openChatViewForSession (initialCwd).
+	const [agentCwd, setAgentCwd] = useState(initialCwd ?? vaultPath);
+
+	// The session id this view is opening/restoring toward. Set synchronously
+	// the moment an open begins so the Session Manager reports THIS session as
+	// live immediately — otherwise, during the async load, session.sessionId
+	// still holds the previous/blank id and the saved twin of the session being
+	// opened renders alongside the live view (the "duplicated session" bug).
+	// Cleared once session.sessionId catches up (or on a fresh blank chat).
+	const openingSessionIdRef = useRef<string | null>(initialSessionId ?? null);
 
 	// ============================================================
 	// Custom Hooks
@@ -663,11 +686,82 @@ export function ChatPanel({
 	// ============================================================
 	// Effects - Session Lifecycle
 	// ============================================================
-	// Initialize session on mount
+	// Initialize session on mount (and when a different agent is requested).
+	//
+	// Call through a ref: agent.createSession is a useCallback that closes over
+	// the working directory, so listing it as a dependency made this effect
+	// re-fire on every folder change — spawning a fresh blank session that
+	// clobbered the one we had just restored (the restored transcript stayed on
+	// screen under a brand-new session id, so the real session also kept
+	// showing as a separate "saved" entry).
+	const createSessionRef = useRef(agent.createSession);
+	createSessionRef.current = agent.createSession;
 	useEffect(() => {
 		logger.log("[Debug] Starting connection setup via useSession...");
-		void agent.createSession(config?.agent || initialAgentId);
-	}, [agent.createSession, config?.agent, initialAgentId]);
+		void createSessionRef.current(config?.agent || initialAgentId);
+	}, [config?.agent, initialAgentId, logger]);
+
+	// Restore a saved session once the agent is ready (openChatViewForSession).
+	// One-shot: consumed via ref so re-renders / later ready-transitions don't
+	// re-restore after the user has moved on to another session.
+	const pendingRestoreSessionIdRef = useRef<string | null>(
+		initialSessionId ?? null,
+	);
+	const restoreSessionRef = useRef(sessionHistory.restoreSession);
+	restoreSessionRef.current = sessionHistory.restoreSession;
+	const restartSessionRef = useRef(agent.restartSession);
+	restartSessionRef.current = agent.restartSession;
+	useEffect(() => {
+		if (!isSessionReady || !pendingRestoreSessionIdRef.current) return;
+		const sid = pendingRestoreSessionIdRef.current;
+		pendingRestoreSessionIdRef.current = null;
+
+		// A session can only be loaded from the folder it belongs to, so the
+		// session's own recorded cwd wins over whatever folder this view
+		// happens to be in (e.g. a restart that fell back to the vault root).
+		const saved = plugin.settingsService
+			.getSavedSessions()
+			.find((s) => s.sessionId === sid);
+		const restoreCwd = saved?.cwd || agentCwd;
+
+		void (async () => {
+			try {
+				logger.log(
+					`[ChatPanel] Restoring initial session: ${sid} (cwd: ${restoreCwd})`,
+				);
+				// Re-init the agent in the session's folder when it differs.
+				if (!isSameDirectory(restoreCwd, agentCwd)) {
+					setAgentCwd(restoreCwd);
+					await restartSessionRef.current(
+						sessionRef.current.agentId,
+						restoreCwd,
+					);
+				}
+				await restoreSessionRef.current(sid, restoreCwd);
+			} catch (error) {
+				logger.error(
+					"[ChatPanel] Initial session restore failed:",
+					error,
+				);
+				openingSessionIdRef.current = null;
+				plugin.viewRegistry.notifyChange();
+				new Notice(
+					"[Agent Client] Failed to restore session. Starting a new chat instead.",
+				);
+			}
+		})();
+	}, [isSessionReady, agentCwd, logger, plugin]);
+
+	// Release the opening claim once the live session id catches up to the
+	// session we were opening — from here on session.sessionId is authoritative.
+	useEffect(() => {
+		if (
+			openingSessionIdRef.current &&
+			session.sessionId === openingSessionIdRef.current
+		) {
+			openingSessionIdRef.current = null;
+		}
+	}, [session.sessionId]);
 
 	// Apply configured model (a select config option with category "model")
 	// when session is ready.
@@ -888,6 +982,21 @@ export function ChatPanel({
 	useEffect(() => {
 		onSessionTitleChanged?.();
 	}, [onSessionTitleChanged, sessionTitle]);
+
+	// Persist the live session id so the in-progress conversation reopens after
+	// the app restarts. Skipped while a session is still being opened so we
+	// never persist a transient/blank id.
+	useEffect(() => {
+		if (openingSessionIdRef.current) return;
+		onSessionIdChanged?.(session.sessionId);
+	}, [onSessionIdChanged, session.sessionId]);
+
+	// Persist the working directory alongside the session id — a session can
+	// only be loaded from the folder it belongs to, so reopening at the vault
+	// root would break restoring a subfolder's session.
+	useEffect(() => {
+		onCwdChanged?.(agentCwd);
+	}, [onCwdChanged, agentCwd]);
 
 	// ============================================================
 	// Effects - System Notification on Permission Request
