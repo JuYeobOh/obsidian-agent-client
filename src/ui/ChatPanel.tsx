@@ -389,13 +389,18 @@ export function ChatPanel({
 
 	const handleNewChatInDirectory = useCallback(
 		async (directory: string) => {
+			// Fresh blank chat: no session is being opened
+			openingSessionIdRef.current = null;
 			// Auto-export current chat before switching
 			if (messages.length > 0) {
 				await autoExportIfEnabled("newChat", messages, session);
 			}
 			agent.clearMessages();
 			setAgentCwd(directory);
-			await agent.restartSession(undefined, directory);
+			// Pass the active agent explicitly — restartSession() falls back to
+			// the *default* agent when given undefined, which would silently
+			// switch agents on a folder change.
+			await agent.restartSession(session.agentId, directory);
 			sessionHistory.invalidateCache();
 		},
 		[

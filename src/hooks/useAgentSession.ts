@@ -229,6 +229,10 @@ export function useAgentSession(
 					effectiveCwd,
 				);
 
+				// Only a missing connection or an agent switch needs a respawn.
+				// A folder change does NOT: one process can host sessions from
+				// several folders, and newSession/loadSession carry the cwd (and
+				// resync the tool/terminal fallback cwd on the client).
 				const initResult =
 					!agentClient.isInitialized() ||
 					agentClient.getCurrentAgentId() !== agentId
