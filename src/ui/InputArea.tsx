@@ -1040,6 +1040,56 @@ export function InputArea({
 				/>
 			)}
 
+			{/* Active note (auto-mention) — its own bordered box above the input.
+			    Clicking ✕ toggles auto-mention off (struck through), not removed. */}
+			{mentions.activeNote && (
+				<div className="agent-client-active-note-box">
+					<span
+						className="agent-client-active-note-icon"
+						ref={(el) => {
+							if (el) setIcon(el, "file-text");
+						}}
+					/>
+					<span
+						className={`agent-client-mention-badge ${mentions.isAutoMentionDisabled ? "agent-client-disabled" : ""}`}
+					>
+						@{mentions.activeNote.name}
+						{mentions.activeNote.selection && (
+							<span className="agent-client-selection-indicator">
+								{":"}
+								{mentions.activeNote.selection.from.line + 1}
+								-{mentions.activeNote.selection.to.line + 1}
+							</span>
+						)}
+					</span>
+					<button
+						className="agent-client-active-note-dismiss clickable-icon"
+						aria-label={
+							mentions.isAutoMentionDisabled
+								? "Enable auto-mention"
+								: "Disable auto-mention"
+						}
+						title={
+							mentions.isAutoMentionDisabled
+								? "Enable auto-mention"
+								: "Disable auto-mention"
+						}
+						onClick={() =>
+							mentions.toggleAutoMention(
+								!mentions.isAutoMentionDisabled,
+							)
+						}
+						ref={(el) => {
+							if (el)
+								setIcon(
+									el,
+									mentions.isAutoMentionDisabled ? "plus" : "x",
+								);
+						}}
+					/>
+				</div>
+			)}
+
 			{/* Input Box - flexbox container with border */}
 			<div
 				className={`agent-client-chat-input-box ${isDraggingOver ? "agent-client-dragging-over" : ""}`}
@@ -1048,49 +1098,6 @@ export function InputArea({
 				onDragLeave={handleDragLeave}
 				onDrop={(e) => void handleDrop(e)}
 			>
-				{/* Auto-mention Badge */}
-				{mentions.activeNote && (
-					<button
-						className="agent-client-auto-mention-inline"
-						onClick={() =>
-							mentions.toggleAutoMention(
-								!mentions.isAutoMentionDisabled,
-							)
-						}
-						title={
-							mentions.isAutoMentionDisabled
-								? "Enable auto-mention"
-								: "Temporarily disable auto-mention"
-						}
-					>
-						<span
-							className={`agent-client-mention-badge ${mentions.isAutoMentionDisabled ? "agent-client-disabled" : ""}`}
-						>
-							@{mentions.activeNote.name}
-							{mentions.activeNote.selection && (
-								<span className="agent-client-selection-indicator">
-									{":"}
-									{mentions.activeNote.selection.from.line +
-										1}
-									-{mentions.activeNote.selection.to.line + 1}
-								</span>
-							)}
-						</span>
-						<span
-							className="agent-client-auto-mention-toggle-icon"
-							ref={(el) => {
-								if (el) {
-									const iconName =
-										mentions.isAutoMentionDisabled
-											? "plus"
-											: "x";
-									setIcon(el, iconName);
-								}
-							}}
-						/>
-					</button>
-				)}
-
 				{/* Textarea with Hint Overlay */}
 				<div className="agent-client-textarea-wrapper">
 					<textarea
@@ -1122,7 +1129,7 @@ export function InputArea({
 				{/* Attachment Preview Strip (images + file references) */}
 				<AttachmentStrip files={attachedFiles} onRemove={removeFile} />
 
-				{/* Input Actions (Config Options / Mode Selector / Model Selector + Send Button) */}
+				{/* Composer controls — bottom row inside the box (Claude Code style) */}
 				<InputToolbar
 					isSending={isSending}
 					isButtonDisabled={isButtonDisabled}
