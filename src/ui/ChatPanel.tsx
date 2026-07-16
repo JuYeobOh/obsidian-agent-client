@@ -1644,6 +1644,17 @@ export function ChatPanel({
 				void handleSetConfigOption(configId, value)
 			}
 			usage={session.usage}
+			onOpenRewind={handleOpenRewind}
+			showToolCalls={settings.displaySettings.showToolCalls}
+			onToggleShowToolCalls={() =>
+				void plugin.settingsService.updateSettings({
+					displaySettings: {
+						...settings.displaySettings,
+						showToolCalls:
+							!settings.displaySettings.showToolCalls,
+					},
+				})
+			}
 			supportsImages={session.promptCapabilities?.image ?? false}
 			agentId={session.agentId}
 			// Controlled component props (for broadcast commands)
