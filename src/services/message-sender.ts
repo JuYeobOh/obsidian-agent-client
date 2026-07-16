@@ -162,6 +162,27 @@ const WIKI_LINK_INSTRUCTION =
 const TABLE_INSTRUCTION =
 	"Always leave a blank line before Markdown tables; without it Obsidian renders them as plain text.";
 
+/**
+ * Whether a string is one of the instruction blocks we prepend to the first
+ * prompt.
+ *
+ * These lead the first prompt, so an agent that derives a session title from
+ * "the first prompt" (Claude Code does, until its background summarizer
+ * produces a real one) hands back our own instruction text as the title.
+ * Callers use this to ignore such a title and keep the user's message instead.
+ */
+export function isInjectedInstruction(text: string): boolean {
+	const candidate = text.trim();
+	if (!candidate) return false;
+	return [
+		WIKI_LINK_INSTRUCTION,
+		TABLE_INSTRUCTION,
+		LATEX_MATH_INSTRUCTION,
+		// Titles arrive sanitized (whitespace collapsed, truncated), so match on
+		// a prefix rather than the whole sentence.
+	].some((instruction) => candidate.startsWith(instruction.slice(0, 40)));
+}
+
 // ============================================================================
 // Shared Helper Functions
 // ============================================================================

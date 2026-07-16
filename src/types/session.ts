@@ -557,6 +557,11 @@ export interface SavedSessionInfo {
 	cwd: string;
 	/** Human-readable session title (first 50 chars of first user message) */
 	title?: string;
+	/**
+	 * True when the user renamed the session themselves. Agent-generated titles
+	 * (session_info_update) must not overwrite a manual rename.
+	 */
+	titleIsCustom?: boolean;
 	/** ISO 8601 timestamp of session creation */
 	createdAt: string;
 	/** ISO 8601 timestamp of last activity */

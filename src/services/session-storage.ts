@@ -156,7 +156,9 @@ export class SessionStorage {
 	}
 
 	/**
-	 * Update the title of a saved session.
+	 * Update the title of a saved session (an explicit user rename).
+	 *
+	 * Marks the title as custom so agent-generated titles won't overwrite it.
 	 * If createIfMissing is provided and session doesn't exist, creates a new entry.
 	 */
 	async updateSessionTitle(
@@ -175,6 +177,7 @@ export class SessionStorage {
 				sessions[idx] = {
 					...sessions[idx],
 					title: newTitle,
+					titleIsCustom: true,
 					updatedAt: new Date().toISOString(),
 				};
 			} else if (createIfMissing) {
@@ -183,6 +186,7 @@ export class SessionStorage {
 					agentId: createIfMissing.agentId,
 					cwd: createIfMissing.cwd,
 					title: newTitle,
+					titleIsCustom: true,
 					createdAt: new Date().toISOString(),
 					updatedAt: new Date().toISOString(),
 				});

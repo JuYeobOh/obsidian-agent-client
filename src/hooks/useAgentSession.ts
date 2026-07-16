@@ -18,6 +18,7 @@ import type { AcpClient } from "../acp/acp-client";
 import type { ISettingsAccess } from "../services/settings-service";
 import type { ErrorInfo } from "../types/errors";
 import { extractErrorMessage } from "../utils/error-utils";
+import { isInjectedInstruction } from "../services/message-sender";
 import { getLogger } from "../utils/logger";
 import {
 	type AgentDisplayInfo,
@@ -141,6 +142,36 @@ export function useAgentSession(
 						configOptions: update.configOptions,
 					}));
 					break;
+				case "session_info_update": {
+					// The agent auto-generates a short title (Claude Code's
+					// session summary) and pushes it here. Adopt it so sessions
+					// aren't stuck showing the whole first prompt — but never
+					// clobber a title the user set themselves.
+					const nextTitle = update.title?.trim();
+					if (!nextTitle) break;
+					// Claude Code falls back to "the first prompt" until its
+					// background summarizer produces a real title — and our
+					// injected instructions lead that prompt, so early on the
+					// agent hands back our own boilerplate. Keep the user's
+					// message as the title until a real summary arrives.
+					if (isInjectedInstruction(nextTitle)) break;
+					const existing = settingsAccess
+						.getSavedSessions()
+						.find((s) => s.sessionId === update.sessionId);
+					if (
+						!existing ||
+						existing.titleIsCustom ||
+						existing.title === nextTitle
+					) {
+						break;
+					}
+					void settingsAccess.updateSession(update.sessionId, {
+						title: nextTitle,
+						// Keep list ordering driven by real activity
+						updatedAt: existing.updatedAt,
+					});
+					break;
+				}
 				case "usage_update":
 					setSession((prev) => ({
 						...prev,
