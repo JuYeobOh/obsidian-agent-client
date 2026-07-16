@@ -191,6 +191,14 @@ function ContentBlock({
 			return <CollapsibleThought text={content.text} plugin={plugin} />;
 
 		case "tool_call":
+			// Hidden via the "Show tool calls" toggle — but a pending permission
+			// request must always surface so the user can respond.
+			if (
+				!plugin.settings.displaySettings.showToolCalls &&
+				!content.permissionRequest
+			) {
+				return null;
+			}
 			return (
 				<ToolCallBlock
 					content={content}
@@ -283,6 +291,30 @@ function ContentBlock({
 // MessageBubble (exported, formerly MessageRenderer)
 // ---------------------------------------------------------------------------
 
+/**
+ * Whether a content block will actually render anything.
+ *
+ * Hidden tool calls render nothing, so callers must skip their wrappers (and
+ * whole messages made up only of them) — otherwise they leave empty rows that
+ * read as huge gaps between the visible turns.
+ */
+export function isContentVisible(
+	content: MessageContent,
+	showToolCalls: boolean,
+): boolean {
+	if (content.type !== "tool_call") return true;
+	// A pending permission must surface even when tool calls are hidden.
+	return showToolCalls || !!content.permissionRequest;
+}
+
+/** Whether a message has anything left to show. */
+export function isMessageVisible(
+	message: ChatMessage,
+	showToolCalls: boolean,
+): boolean {
+	return message.content.some((c) => isContentVisible(c, showToolCalls));
+}
+
 export interface MessageBubbleProps {
 	message: ChatMessage;
 	plugin: AgentClientPlugin;
@@ -292,6 +324,12 @@ export interface MessageBubbleProps {
 		requestId: string,
 		optionId: string,
 	) => Promise<void>;
+	/**
+	 * Whether tool-call blocks are shown. Read from settings inside
+	 * ContentBlock, but also a prop here so React.memo re-renders bubbles
+	 * when the toggle flips.
+	 */
+	showToolCalls: boolean;
 }
 
 /**
@@ -386,6 +424,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 	plugin,
 	terminalClient,
 	onApprovePermission,
+	showToolCalls,
 }: MessageBubbleProps) {
 	const groups = groupContent(message.content);
 
@@ -414,6 +453,12 @@ export const MessageBubble = React.memo(function MessageBubble({
 						</div>
 					);
 				} else {
+					// Skip wrappers around content that renders nothing (e.g. a
+					// tool call while "Show tool calls" is off) — an empty div
+					// still takes up space and looks like a gap.
+					if (!isContentVisible(group.item, showToolCalls)) {
+						return null;
+					}
 					// Render single non-image content
 					return (
 						<div key={idx}>

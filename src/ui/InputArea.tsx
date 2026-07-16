@@ -217,6 +217,12 @@ export interface InputAreaProps {
 	onConfigOptionChange?: (configId: string, value: string) => void;
 	/** Context window usage (shown as percentage indicator) */
 	usage?: SessionUsage;
+	/** Whether tool-call blocks are shown in the chat */
+	showToolCalls: boolean;
+	/** Toggle the show-tool-calls display setting */
+	onToggleShowToolCalls: () => void;
+	/** Open the rewind picker (Esc when idle) */
+	onOpenRewind: () => void;
 	/** Whether the agent supports image attachments */
 	supportsImages?: boolean;
 	/** Current agent ID (used to clear images on agent switch) */
@@ -276,6 +282,9 @@ export function InputArea({
 	onModeChange,
 	configOptions,
 	onConfigOptionChange,
+	showToolCalls,
+	onToggleShowToolCalls,
+	onOpenRewind,
 	usage,
 	supportsImages = false,
 	agentId,
@@ -1093,6 +1102,8 @@ export function InputArea({
 					onConfigOptionChange={onConfigOptionChange}
 					usage={usage}
 					isSessionReady={isSessionReady}
+					showToolCalls={showToolCalls}
+					onToggleShowToolCalls={onToggleShowToolCalls}
 				/>
 			</div>
 		</div>

@@ -43,6 +43,21 @@ export const ToolCallBlock = React.memo(function ToolCallBlock({
 		string | undefined
 	>(permissionRequest?.selectedOptionId);
 
+	// Whether this tool call has expandable details (diff / terminal output).
+	const hasExpandableContent = useMemo(
+		() =>
+			Array.isArray(toolContent) &&
+			toolContent.some(
+				(item) => item.type === "diff" || item.type === "terminal",
+			),
+		[toolContent],
+	);
+
+	// Collapsed by default; the user expands details on demand. A pending
+	// permission request must always be visible, so force-expand for it.
+	const [isExpanded, setIsExpanded] = useState(false);
+	const showBody = isExpanded || !!permissionRequest;
+
 	// Update selectedOptionId when permissionRequest changes
 	React.useEffect(() => {
 		if (permissionRequest?.selectedOptionId !== selectedOptionId) {
@@ -88,11 +103,24 @@ export const ToolCallBlock = React.memo(function ToolCallBlock({
 		}
 	};
 
+	const canToggle = hasExpandableContent && !permissionRequest;
+
 	return (
 		<div className="agent-client-message-tool-call">
-			{/* Header */}
-			<div className="agent-client-message-tool-call-header">
+			{/* Header (click to expand/collapse details when available) */}
+			<div
+				className={`agent-client-message-tool-call-header ${canToggle ? "is-toggleable" : ""}`}
+				onClick={
+					canToggle ? () => setIsExpanded((prev) => !prev) : undefined
+				}
+			>
 				<div className="agent-client-message-tool-call-title">
+					{canToggle && (
+						<LucideIcon
+							name={showBody ? "chevron-down" : "chevron-right"}
+							className="agent-client-message-tool-call-chevron"
+						/>
+					)}
 					{showEmojis && (
 						<LucideIcon
 							name={getKindIconName(kind)}
@@ -136,8 +164,10 @@ export const ToolCallBlock = React.memo(function ToolCallBlock({
 				)}
 			</div>
 
-			{/* Tool call content (diffs, terminal output, etc.) */}
-			{toolContent &&
+			{/* Tool call content (diffs, terminal output, etc.) — collapsed
+			    by default; shown when expanded or a permission is pending. */}
+			{showBody &&
+				toolContent &&
 				toolContent.map((item, index) => {
 					if (item.type === "terminal") {
 						return (
