@@ -399,6 +399,74 @@ export function ChatPanel({
 
 	// Wrap send so the Gemini notice also dismisses on send, mirroring how
 	// useChatActions clears agentUpdateNotification inside handleSendMessage.
+	// ============================================================
+	// Rewind (Esc when idle) — pick a previous user message to restore the
+	// conversation to, like Claude Code's rewind. Selecting a message drops it
+	// and everything after from the local thread and loads its text back into
+	// the composer. NOTE: this rewinds the *local* transcript; the agent process
+	// still retains the earlier turns (ACP exposes no truncation/checkpoint API).
+	// ============================================================
+
+	// Indices (into `messages`) of every user message, oldest-first.
+	const userMessageIndices = useMemo(
+		() =>
+			messages.reduce<number[]>((acc, m, i) => {
+				if (m.role === "user") acc.push(i);
+				return acc;
+			}, []),
+		[messages],
+	);
+
+	const userMessageText = useCallback(
+		(index: number): string => {
+			const msg = messages[index];
+			if (!msg) return "";
+			const textContent = msg.content.find(
+				(c) => c.type === "text" || c.type === "text_with_context",
+			);
+			return textContent && "text" in textContent ? textContent.text : "";
+		},
+		[messages],
+	);
+
+	/**
+	 * Restore the conversation to the given user message: drop it and every
+	 * later message, then load its text back into the composer for editing.
+	 */
+	const handleRewindToIndex = useCallback(
+		(messageIndex: number) => {
+			const text = userMessageText(messageIndex);
+			agent.setMessagesFromLocal(messages.slice(0, messageIndex));
+			setInputValue(text);
+			// Best-effort focus so the restored text is ready to edit.
+			window.setTimeout(() => {
+				const container = containerElProp ?? containerRef.current;
+				const textarea = container?.querySelector(
+					"textarea.agent-client-chat-input-textarea",
+				);
+				if (textarea instanceof HTMLTextAreaElement) {
+					textarea.focus();
+					textarea.selectionStart = textarea.value.length;
+					textarea.selectionEnd = textarea.value.length;
+				}
+			}, 0);
+		},
+		[messages, userMessageText, agent.setMessagesFromLocal, containerElProp],
+	);
+
+	/** Open the rewind picker (Esc when idle). */
+	const handleOpenRewind = useCallback(() => {
+		const items = userMessageIndices.map((index) => ({
+			index,
+			text: userMessageText(index),
+		}));
+		if (items.length === 0) return;
+		new RewindModal(plugin.app, {
+			items,
+			onSelect: handleRewindToIndex,
+		}).open();
+	}, [plugin.app, userMessageIndices, userMessageText, handleRewindToIndex]);
+
 	const handleSendMessageWithGeminiDismiss = useCallback(
 		(content: string, attachments?: AttachedFile[]) => {
 			setGeminiNoticeDismissed(true);
@@ -1559,6 +1627,7 @@ export function ChatPanel({
 		>
 			{headerElement}
 			{cwdBanner}
+			{sessionDrawer}
 			{messageListElement}
 			{inputAreaElement}
 		</div>

@@ -849,6 +849,38 @@ export function InputArea({
 				return;
 			}
 
+			// Esc / Ctrl+C interrupt an in-progress generation (like Claude
+			// Code). Dropdown Esc is handled above, so this only fires when no
+			// suggestion popup is open.
+			if (isSending) {
+				const isEsc = e.key === "Escape";
+				const isCtrlC =
+					(e.ctrlKey || e.metaKey) &&
+					(e.key === "c" || e.key === "C");
+				if (isEsc || isCtrlC) {
+					// Don't hijack a genuine copy of selected text.
+					if (isCtrlC) {
+						const ta = textareaRef.current;
+						if (ta && ta.selectionStart !== ta.selectionEnd) {
+							return;
+						}
+					}
+					e.preventDefault();
+					void onStopGeneration();
+					return;
+				}
+			}
+
+			// Esc when idle opens the rewind picker. stopPropagation keeps
+			// Obsidian from also handling Esc and moving focus out of the
+			// sidebar into the editor.
+			if (!isSending && e.key === "Escape") {
+				e.preventDefault();
+				e.stopPropagation();
+				onOpenRewind();
+				return;
+			}
+
 			// Handle input history navigation (ArrowUp/ArrowDown)
 			if (handleHistoryKeyDown(e, textareaRef.current)) {
 				return;
@@ -880,6 +912,8 @@ export function InputArea({
 			isSending,
 			isButtonDisabled,
 			handleSendOrStop,
+			onStopGeneration,
+			onOpenRewind,
 			settings.sendMessageShortcut,
 		],
 	);
