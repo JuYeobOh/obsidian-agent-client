@@ -1067,6 +1067,19 @@ export function ChatPanel({
 				`[ChatPanel] Session messages saved: ${session.sessionId}`,
 			);
 
+			// A session finishing in the background is otherwise invisible: the
+			// OS notification below only fires when Obsidian isn't focused, so
+			// a background turn completing while you work in another session
+			// would pass silently. Name it — the point is knowing *which* one.
+			if (plugin.viewRegistry.getFocusedId() !== viewId) {
+				const title = computeSessionTitle(
+					session.sessionId,
+					plugin.settingsService.getSnapshot().savedSessions ?? [],
+					messages,
+				);
+				new Notice(`[Agent Client] ${title} — response ready`);
+			}
+
 			// System notification on response completion
 			if (
 				settings.enableSystemNotifications &&
@@ -1084,6 +1097,9 @@ export function ChatPanel({
 		sessionHistory.saveSessionMessages,
 		settings.enableSystemNotifications,
 		activeAgentLabel,
+		plugin.viewRegistry,
+		viewId,
+
 		logger,
 	]);
 
