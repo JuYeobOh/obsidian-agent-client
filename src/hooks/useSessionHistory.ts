@@ -545,7 +545,13 @@ export function useSessionHistory(
 						await settingsAccess.loadSessionMessages(sessionId);
 
 					if (localMessages && onMessagesRestore) {
-						// Local messages available: ignore agent replay, restore from local
+						// Local messages available: ignore agent replay, restore from local.
+						//
+						// Restore AFTER the load resolves, not before: replay
+						// updates already queued (or that slip past the ignore
+						// flag) would otherwise pile on top of the restored
+						// transcript. Writing the local copy last overwrites any
+						// such leakage, which is what keeps the pane stable.
 						onIgnoreUpdates?.(true);
 						onClearMessages?.();
 						try {
