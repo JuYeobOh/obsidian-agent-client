@@ -1,24 +1,31 @@
-<h1 align="center">Agent Client Plugin for Obsidian</h1>
+<h1 align="center">Agent Client Plugin for Obsidian — 個人用フォーク</h1>
 
 <p align="center">
-  <img src="https://img.shields.io/github/downloads/RAIT-09/obsidian-agent-client/total" alt="GitHub Downloads">
   <img src="https://img.shields.io/github/license/RAIT-09/obsidian-agent-client" alt="License">
-  <img src="https://img.shields.io/github/v/release/RAIT-09/obsidian-agent-client" alt="GitHub release">
-  <img src="https://img.shields.io/github/last-commit/RAIT-09/obsidian-agent-client" alt="GitHub last commit">
-  <a href="https://github.com/RAIT-09/obsidian-agent-client/discussions"><img src="https://img.shields.io/github/discussions/RAIT-09/obsidian-agent-client" alt="GitHub Discussions"></a>
 </p>
 
-<p align="center">
-  <a href="https://community.obsidian.md/plugins/agent-client" target="_blank"><img src="https://img.shields.io/badge/Add%20to%20Obsidian-7c3aed?logo=obsidian&logoColor=white&style=for-the-badge" alt="Add to Obsidian"></a>
-</p>
-
-<p align="center">
-  <a href="https://www.buymeacoffee.com/rait09" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" width="180" height="50" ></a>
-</p>
+> ### これは改変されたフォークであり、オリジナルのプラグインではありません
+>
+> オリジナルは RAIT-09 氏による
+> **[RAIT-09/obsidian-agent-client](https://github.com/RAIT-09/obsidian-agent-client)**
+> です。Star・Issue・支援はそちらへお願いします。
+>
+> このフォークは、個人の Vault で Claude Code アプリのように使うための改変です。
+> Obsidian コミュニティプラグインには登録されておらず、リリースも配布せず、
+> サポートもありません。プラグインを使いたいだけであればオリジナルをどうぞ。
+>
+> アップストリーム `89e2d75`（v0.11.0）から分岐。変更点は
+> [英語版 README](README.md#changes-in-this-fork) を参照してください。
 
 AIエージェント（Claude Code、Codex、Gemini CLI）をObsidianに直接統合。Vault内からAIアシスタントとチャットできます。
 
 このプラグインは、Zed の [Agent Client Protocol (ACP)](https://github.com/agentclientprotocol/agent-client-protocol) で構築されています。
+
+このプラグインが役に立ったなら、支援すべきはオリジナルの作者です:
+
+<p align="center">
+  <a href="https://www.buymeacoffee.com/rait09" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy the original author a coffee" width="180" height="50" ></a>
+</p>
 
 https://github.com/user-attachments/assets/1c538349-b3fb-44dd-a163-7331cbca7824
 
@@ -114,8 +121,10 @@ npm run build
 
 ## ライセンス
 
-Apache License 2.0 - 詳細は [LICENSE](LICENSE) を参照。
+Apache License 2.0 — 詳細は [LICENSE](LICENSE) と [NOTICE](NOTICE) を参照。
 
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=RAIT-09/obsidian-agent-client&type=Date)](https://www.star-history.com/#RAIT-09/obsidian-agent-client&Date)
+Copyright 2025-2026 RAIT-09. このリポジトリは
+[RAIT-09/obsidian-agent-client](https://github.com/RAIT-09/obsidian-agent-client)
+を改変したフォークです。アップストリームからの変更点は
+[英語版 README](README.md#changes-in-this-fork) に記載し、
+個々の変更はコミット履歴に残しています。

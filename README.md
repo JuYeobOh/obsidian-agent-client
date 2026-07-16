@@ -1,28 +1,34 @@
-<h1 align="center">Agent Client Plugin for Obsidian</h1>
+<h1 align="center">Agent Client Plugin for Obsidian — personal fork</h1>
 
 <p align="center">
-  <img src="https://img.shields.io/github/downloads/RAIT-09/obsidian-agent-client/total" alt="GitHub Downloads">
   <img src="https://img.shields.io/github/license/RAIT-09/obsidian-agent-client" alt="License">
-  <img src="https://img.shields.io/github/v/release/RAIT-09/obsidian-agent-client" alt="GitHub release">
-  <img src="https://img.shields.io/github/last-commit/RAIT-09/obsidian-agent-client" alt="GitHub last commit">
-  <a href="https://github.com/RAIT-09/obsidian-agent-client/discussions"><img src="https://img.shields.io/github/discussions/RAIT-09/obsidian-agent-client" alt="GitHub Discussions"></a>
 </p>
+
+> ### This is a modified fork, not the original plugin
+>
+> The original is **[RAIT-09/obsidian-agent-client](https://github.com/RAIT-09/obsidian-agent-client)**
+> by RAIT-09. Star it, report issues there, and support that project — not this one.
+>
+> This fork exists to make the plugin behave more like the Claude Code app inside
+> Obsidian, for one person's own vault. It is **not** in the Obsidian community
+> plugin registry, ships no releases, and comes with no support. If you just want
+> the plugin, install the original.
+>
+> Forked from upstream `89e2d75` (v0.11.0) — see [Changes in this fork](#changes-in-this-fork).
 
 <p align="center">
   <a href="README.ja.md">日本語はこちら</a>
 </p>
 
-<p align="center">
-  <a href="https://community.obsidian.md/plugins/agent-client" target="_blank"><img src="https://img.shields.io/badge/Add%20to%20Obsidian-7c3aed?logo=obsidian&logoColor=white&style=for-the-badge" alt="Add to Obsidian"></a>
-</p>
-
-<p align="center">
-  <a href="https://www.buymeacoffee.com/rait09" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" width="180" height="50" ></a>
-</p>
-
 Bring AI agents (Claude Code, Codex, Gemini CLI) directly into Obsidian. Chat with your AI assistant right from your vault.
 
 Built on [Agent Client Protocol (ACP)](https://github.com/agentclientprotocol/agent-client-protocol) by Zed.
+
+If the plugin is useful to you, the person to support is its original author:
+
+<p align="center">
+  <a href="https://www.buymeacoffee.com/rait09" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy the original author a coffee" width="180" height="50" ></a>
+</p>
 
 https://github.com/user-attachments/assets/1c538349-b3fb-44dd-a163-7331cbca7824
 
@@ -104,6 +110,41 @@ Open a terminal (Terminal on macOS/Linux, PowerShell on Windows) and run the fol
 
 **[Full Documentation](https://rait-09.github.io/obsidian-agent-client/)**
 
+## Changes in this fork
+
+All of these are modifications to the original work, made after upstream
+`89e2d75` (v0.11.0). Everything else is RAIT-09's.
+
+**Bug fixes** — these are upstream bugs, and are intended to go back as pull
+requests rather than live here:
+
+- The connection only remembered the folder it was spawned in, so a tool call in
+  a session opened from a different folder ran against the spawn folder — a
+  prompt in one vault subfolder could create files in another.
+- Opening a chat could fail with "ACP connection closed": persisted view state
+  arriving after mount re-ran session creation, and the second attempt tore down
+  the connection the first was building.
+- "New chat in directory..." passed `undefined` to `restartSession()`, whose
+  fallback is the *default* agent — changing folder silently switched agents.
+- `createSession` was named as an effect dependency while closing over the
+  working directory, so every folder change spawned a stray blank session.
+- Titles pushed by the agent (`session_info_update`) were received and dropped,
+  so a session stayed titled with its entire first prompt.
+
+**Features and UI**, specific to using Claude Code in a research vault:
+
+- Session manager: sessions grouped into a folder tree, with pinning, aliases,
+  collapse and manual ordering; selecting one loads it into the open view
+  instead of spawning another tab.
+- The in-progress session reopens after an Obsidian restart.
+- Tool calls collapse by default, with a toggle to hide them entirely.
+- Rewind: Esc when idle picks an earlier point to restore the local thread to.
+- Composer rebuilt, with a usage popover showing context *and* subscription
+  plan limits (read from the Claude Code CLI's local credentials).
+- `@`-mentions accept PDFs, passed as resource links rather than inlined text.
+- The working directory is always shown, and opens a session drawer in-pane.
+- Restyled chat: white background, right-aligned user bubbles, wider spacing.
+
 ## Development
 
 ```bash
@@ -118,8 +159,10 @@ npm run build
 
 ## License
 
-Apache License 2.0 - see [LICENSE](LICENSE) for details.
+Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=RAIT-09/obsidian-agent-client&type=Date)](https://www.star-history.com/#RAIT-09/obsidian-agent-client&Date)
+Copyright 2025-2026 RAIT-09. This repository is a modified fork of
+[RAIT-09/obsidian-agent-client](https://github.com/RAIT-09/obsidian-agent-client);
+the files changed relative to upstream are described in
+[Changes in this fork](#changes-in-this-fork), and the commit history records
+each modification individually.
