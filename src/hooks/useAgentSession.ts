@@ -107,6 +107,9 @@ export function useAgentSession(
 	const sessionRef = useRef(session);
 	sessionRef.current = session;
 
+	// Guard against duplicate concurrent createSession calls (same agent+cwd)
+	const creationInFlightRef = useRef<string | null>(null);
+
 	// ============================================================
 	// Session Update Handler (session-level only)
 	// ============================================================
@@ -171,6 +174,20 @@ export function useAgentSession(
 			const settings = settingsAccess.getSnapshot();
 			const agentId = overrideAgentId || getDefaultAgentId(settings);
 			const currentAgent = getCurrentAgent(settings, agentId);
+
+			// Drop duplicate concurrent requests for the same agent+cwd.
+			// Obsidian can deliver view state (initialAgentId) right after React
+			// mounts, re-running ChatPanel's create-session effect while the
+			// first creation is still initializing — the second initialize()
+			// would kill the first connection ("ACP connection closed").
+			const creationKey = `${agentId}|${effectiveCwd}`;
+			if (creationInFlightRef.current === creationKey) {
+				getLogger().log(
+					`[useAgentSession] Skipping duplicate concurrent createSession: ${creationKey}`,
+				);
+				return;
+			}
+			creationInFlightRef.current = creationKey;
 
 			setSession((prev) => ({
 				...prev,
@@ -288,6 +305,8 @@ export function useAgentSession(
 					suggestion:
 						"Please check the agent configuration and try again.",
 				});
+			} finally {
+				creationInFlightRef.current = null;
 			}
 		},
 		[agentClient, settingsAccess, workingDirectory, setErrorInfo],
