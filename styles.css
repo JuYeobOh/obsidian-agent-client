@@ -502,6 +502,9 @@ If your plugin does not need CSS, delete this file.
 	padding-left: 0;
 	padding-right: 0;
 	overflow: hidden;
+	/* Plain page background (white in light theme) instead of the sidebar's
+	   default tinted background */
+	background-color: var(--background-primary);
 }
 
 /* Hide stale inner view-header title (updateHeader() doesn't refresh it); visibility:hidden preserves flex layout. */
@@ -516,6 +519,7 @@ If your plugin does not need CSS, delete this file.
 	display: flex;
 	flex-direction: column;
 	padding: 0;
+	background-color: var(--background-primary);
 }
 
 /* Header — uses Obsidian's .nav-header + .nav-buttons-container pattern */
@@ -587,9 +591,12 @@ If your plugin does not need CSS, delete this file.
 	position: relative;
 }
 
-/* Virtual item spacing (replaces flex gap: 2px) */
+/* Virtual item spacing (replaces flex gap: 2px) — roomy enough that
+   consecutive turns read as separate blocks.
+   NOTE: padding (not margin) — the virtualizer measures each item's box, and a
+   child margin would collapse out of it and desync the measured height. */
 .agent-client-virtual-item {
-	padding-bottom: 2px;
+	padding-bottom: 28px;
 }
 
 /* Allow horizontal scroll for wide tables within messages */
@@ -1238,12 +1245,17 @@ If your plugin does not need CSS, delete this file.
 }
 
 .agent-client-message-renderer.agent-client-message-user {
-	width: auto;
-	margin-left: 8px;
+	/* Hug the text and sit against the right edge, leaving the left column
+	   empty so the user's turns read as a distinct side of the conversation */
+	width: fit-content;
+	max-width: 85%;
+	margin-left: auto;
 	margin-right: 8px;
-	background-color: var(--background-primary);
+	padding: 4px 14px;
+	/* Tinted so the user's own messages stand out against the white page */
+	background-color: var(--background-secondary);
 	border: 1px solid var(--background-modifier-border);
-	border-radius: 8px;
+	border-radius: 12px;
 }
 
 .agent-client-message-renderer.agent-client-message-assistant {
@@ -2310,4 +2322,569 @@ If your plugin does not need CSS, delete this file.
 .agent-client-agent-label {
 	color: var(--text-normal);
 	font-size: 12px;
+}
+
+/* ============================================================
+   Session Manager — folder grouping (pin / order / alias)
+   ============================================================ */
+
+.agent-client-folder-group {
+	margin-bottom: 2px;
+}
+
+.agent-client-folder-header {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 8px 4px 4px;
+	border-radius: var(--radius-s);
+	cursor: pointer;
+	user-select: none;
+}
+
+.agent-client-folder-header:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.agent-client-folder-chevron svg {
+	width: 14px;
+	height: 14px;
+	color: var(--text-muted);
+}
+
+.agent-client-folder-icon svg {
+	width: 14px;
+	height: 14px;
+	color: var(--text-muted);
+}
+
+.agent-client-folder-pinned svg {
+	color: var(--text-accent);
+}
+
+.agent-client-folder-label {
+	flex: 1;
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.agent-client-folder-count {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+	background-color: var(--background-modifier-hover);
+	border-radius: var(--radius-s);
+	padding: 0 6px;
+	line-height: 1.5;
+}
+
+.agent-client-folder-action {
+	display: none;
+	padding: 2px;
+}
+
+.agent-client-folder-action svg {
+	width: 14px;
+	height: 14px;
+}
+
+.agent-client-folder-header:hover .agent-client-folder-action {
+	display: flex;
+}
+
+.agent-client-folder-children {
+	padding-left: 14px;
+}
+
+.agent-client-folder-empty {
+	padding: 4px 8px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+	font-style: italic;
+}
+
+.agent-client-saved-session-row {
+	opacity: 0.85;
+}
+
+.agent-client-saved-session-icon svg {
+	color: var(--text-faint);
+}
+
+.agent-client-session-item-time {
+	color: var(--text-faint);
+}
+
+.agent-client-session-item-mode {
+	color: var(--text-muted);
+}
+
+.agent-client-session-item-usage {
+	font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   Context window usage popover (input toolbar)
+   ============================================================ */
+
+/* Fix: sidebar input box bottom border was flush with the pane edge */
+.agent-client-chat-input-container {
+	padding-bottom: 8px;
+}
+
+.agent-client-usage-indicator {
+	cursor: help;
+}
+
+.agent-client-usage-popover {
+	position: fixed;
+	z-index: var(--layer-menu, 25);
+	min-width: 240px;
+	padding: 10px 12px;
+	background-color: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	box-shadow: var(--shadow-s);
+	pointer-events: none;
+}
+
+.agent-client-usage-popover-row {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 16px;
+	font-size: var(--font-ui-small);
+}
+
+.agent-client-usage-popover-label {
+	color: var(--text-normal);
+	font-weight: var(--font-semibold);
+	white-space: nowrap;
+}
+
+.agent-client-usage-popover-value {
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.agent-client-usage-popover-bar {
+	height: 4px;
+	margin-top: 8px;
+	border-radius: 2px;
+	background-color: var(--background-modifier-border);
+	overflow: hidden;
+}
+
+.agent-client-usage-popover-fill {
+	height: 100%;
+	border-radius: 2px;
+	background-color: var(--interactive-accent);
+}
+
+.agent-client-usage-popover-fill.agent-client-usage-caution {
+	background-color: var(--color-yellow);
+}
+
+.agent-client-usage-popover-fill.agent-client-usage-warning {
+	background-color: var(--color-orange);
+}
+
+.agent-client-usage-popover-fill.agent-client-usage-danger {
+	background-color: var(--color-red);
+}
+
+.agent-client-usage-popover-cost {
+	margin-top: 8px;
+}
+
+/* Folder drag & drop reordering */
+.agent-client-folder-header[draggable="true"] {
+	cursor: pointer;
+}
+
+.agent-client-folder-drop-target {
+	box-shadow: inset 0 2px 0 var(--interactive-accent);
+}
+
+/* Usage popover v2: click-to-toggle with plan limits */
+.agent-client-usage-popover {
+	pointer-events: auto;
+	min-width: 280px;
+}
+
+.agent-client-usage-indicator {
+	cursor: pointer;
+	border-radius: var(--radius-s);
+	padding: 2px 6px;
+}
+
+.agent-client-usage-indicator:hover,
+.agent-client-usage-indicator.is-active {
+	background-color: var(--background-modifier-hover);
+}
+
+.agent-client-usage-popover-divider {
+	height: 1px;
+	background-color: var(--background-modifier-border);
+	margin: 10px 0;
+}
+
+.agent-client-usage-popover-limit + .agent-client-usage-popover-limit {
+	margin-top: 10px;
+}
+
+.agent-client-usage-popover-reset {
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+}
+
+/* Collapsed options (sliders) button */
+.agent-client-toolbar-options-button {
+	flex-shrink: 0;
+	padding: 2px 6px;
+}
+
+.agent-client-toolbar-options-button svg {
+	width: 16px;
+	height: 16px;
+}
+
+/* Composer layout v2: mode left, model/effort/usage right */
+.agent-client-toolbar-spacer {
+	flex: 1;
+	min-width: 8px;
+}
+
+.agent-client-usage-indicator {
+	margin-right: 0;
+}
+
+/* ============================================================
+   Composer v3: active-note box + toolbar outside the input box
+   ============================================================ */
+
+/* Active-note box: a bordered chip row above the input box */
+.agent-client-active-note-box {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 6px;
+	padding: 5px 8px 5px 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	/* Tinted to match the user's message bubbles */
+	background-color: var(--background-secondary);
+}
+
+.agent-client-active-note-icon {
+	display: inline-flex;
+	color: var(--text-muted);
+	flex-shrink: 0;
+}
+
+.agent-client-active-note-icon svg {
+	width: 15px;
+	height: 15px;
+}
+
+.agent-client-active-note-box .agent-client-mention-badge {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	background-color: transparent;
+	color: var(--interactive-accent-hover);
+	font-weight: 500;
+}
+
+.agent-client-active-note-dismiss {
+	flex-shrink: 0;
+	padding: 2px;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.agent-client-active-note-dismiss:hover {
+	color: var(--text-normal);
+	background-color: var(--background-modifier-hover);
+}
+
+.agent-client-active-note-dismiss svg {
+	width: 14px;
+	height: 14px;
+}
+
+/* Toolbar is the bottom row inside the input box (Claude Code style) */
+.agent-client-chat-input-actions {
+	padding: 4px 10px 8px 10px;
+}
+
+/* Tool call collapse/expand (#2) */
+.agent-client-message-tool-call-header.is-toggleable {
+	cursor: pointer;
+}
+
+.agent-client-message-tool-call-chevron {
+	color: var(--text-muted);
+	flex-shrink: 0;
+}
+
+.agent-client-message-tool-call-chevron svg {
+	width: 14px;
+	height: 14px;
+}
+
+.agent-client-message-tool-call-header.is-toggleable:hover
+	.agent-client-message-tool-call-title-text {
+	color: var(--text-normal);
+}
+
+/* Rewind (Esc when idle) */
+.agent-client-rewind-banner {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 6px;
+	padding: 5px 8px 5px 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+	font-size: var(--font-ui-small);
+}
+
+.agent-client-rewind-icon {
+	display: inline-flex;
+	color: var(--text-accent);
+	flex-shrink: 0;
+}
+
+.agent-client-rewind-icon svg {
+	width: 15px;
+	height: 15px;
+}
+
+.agent-client-rewind-text {
+	flex: 1;
+	min-width: 0;
+	color: var(--text-muted);
+}
+
+.agent-client-rewind-cancel {
+	flex-shrink: 0;
+	padding: 2px;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.agent-client-rewind-cancel:hover {
+	color: var(--text-normal);
+	background-color: var(--background-modifier-hover);
+}
+
+.agent-client-rewind-cancel svg {
+	width: 14px;
+	height: 14px;
+}
+
+/* Messages that will be dropped when the rewind is confirmed */
+.agent-client-rewind-pending {
+	opacity: 0.4;
+	filter: grayscale(0.3);
+}
+
+/* Rewind picker modal */
+.agent-client-rewind-modal {
+	width: min(760px, 92vw);
+	max-height: 84vh;
+}
+
+/* Let the list own the scrolling rather than the whole modal body */
+.agent-client-rewind-modal .modal-content {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	overflow: hidden;
+}
+
+.agent-client-rewind-subtitle {
+	margin: 0 0 4px 0;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+.agent-client-rewind-caveat {
+	margin: 0 0 12px 0;
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+}
+
+.agent-client-rewind-list {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	flex: 1;
+	min-height: 0;
+	max-height: 60vh;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding-right: 4px;
+}
+
+.agent-client-rewind-item {
+	display: block;
+	width: 100%;
+	text-align: left;
+	padding: 12px 14px;
+	border: none;
+	border-radius: var(--radius-m);
+	background-color: transparent;
+	color: var(--text-normal);
+	font-size: var(--font-text-size);
+	line-height: var(--line-height-normal);
+	cursor: pointer;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	box-shadow: none;
+	height: auto;
+}
+
+.agent-client-rewind-item:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.agent-client-rewind-empty {
+	padding: 12px 4px;
+	color: var(--text-faint);
+	font-size: var(--font-ui-small);
+}
+
+/* ============================================================
+   Single-pane (Claude Code-like) chat: hide the tab header bar
+   ============================================================ */
+
+/*
+ * Background sessions each need their own leaf, so the tab strip grew a bot
+ * icon per session. Collapse them to exactly ONE chat icon — the Session
+ * Manager is the real switcher — while leaving one entry point into the chat.
+ *
+ * Only the chat's own tabs are touched, not the strip: it is shared with
+ * Outline/Backlinks/etc., which must stay reachable.
+ *
+ * Two cases, so the surviving icon is always the meaningful one:
+ *   1. a chat is active  → keep the active chat tab (icon reflects what's shown)
+ *   2. no chat is active → keep the first chat tab (a way back into the chat)
+ *
+ * Extra chats stay reachable via the Session Manager, and are closable from the
+ * session row menu (⋯ → Close).
+ */
+.workspace-tab-header-container-inner:has(
+		.workspace-tab-header[data-type="agent-client-chat-view"].is-active
+	)
+	.workspace-tab-header[data-type="agent-client-chat-view"]:not(.is-active) {
+	display: none;
+}
+
+.workspace-tab-header-container-inner:not(
+		:has(.workspace-tab-header[data-type="agent-client-chat-view"].is-active)
+	)
+	.workspace-tab-header[data-type="agent-client-chat-view"]
+	~ .workspace-tab-header[data-type="agent-client-chat-view"] {
+	display: none;
+}
+
+/* Non-markdown (e.g. PDF) badge in @-mention suggestions */
+.agent-client-mention-dropdown-item-ext {
+	margin-left: 6px;
+	padding: 0 5px;
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+	color: var(--text-muted);
+	background-color: var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	vertical-align: middle;
+}
+
+/* The cwd line is the entry point into the Session Manager */
+.agent-client-cwd-banner.is-clickable {
+	cursor: pointer;
+	border-radius: var(--radius-s);
+	margin: 0 6px;
+	padding: 6px;
+}
+
+.agent-client-cwd-banner.is-clickable:hover {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.agent-client-cwd-banner.is-clickable:focus-visible {
+	outline: 1px solid var(--interactive-accent);
+	outline-offset: -1px;
+}
+
+/* ============================================================
+   In-chat session drawer (opened from the folder line)
+   ============================================================ */
+
+/* The container is the positioning context so the drawer covers only this
+   pane, not the whole workspace. */
+.agent-client-chat-view-container {
+	position: relative;
+}
+
+.agent-client-session-drawer-scrim {
+	position: absolute;
+	inset: 0;
+	z-index: 20;
+	background-color: var(--background-modifier-cover);
+	opacity: 0.35;
+}
+
+.agent-client-session-drawer {
+	position: absolute;
+	top: 0;
+	left: 0;
+	bottom: 0;
+	z-index: 21;
+	width: min(280px, 85%);
+	display: flex;
+	flex-direction: column;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding: 8px 6px;
+	background-color: var(--background-primary);
+	border-right: 1px solid var(--background-modifier-border);
+	box-shadow: var(--shadow-s);
+	animation: agent-client-drawer-in 120ms ease-out;
+}
+
+@keyframes agent-client-drawer-in {
+	from {
+		transform: translateX(-100%);
+	}
+	to {
+		transform: translateX(0);
+	}
+}
+
+.agent-client-cwd-banner-chevron {
+	display: inline-flex;
+	margin-left: auto;
+	flex-shrink: 0;
+}
+
+.agent-client-cwd-banner-chevron svg {
+	width: 14px;
+	height: 14px;
+}
+
+.agent-client-cwd-banner.is-active {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
 }
