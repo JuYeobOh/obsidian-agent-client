@@ -16,6 +16,7 @@
  */
 
 import type { ChatInputState } from "../types/chat";
+import type { SessionUsage } from "../types/session";
 import { getLogger } from "../utils/logger";
 
 // ============================================================================
@@ -169,6 +170,16 @@ export interface IChatViewContainer {
 	getSessionStatus(): SessionStatus;
 
 	/**
+	 * Whether this view has real work in flight — a turn being generated or a
+	 * pending permission request.
+	 *
+	 * Distinct from the "busy" display status, which also covers merely loading
+	 * a session. Taking over a loading view is harmless; taking over one that is
+	 * mid-answer would throw that answer away.
+	 */
+	hasWorkInProgress(): boolean;
+
+	/**
 	 * Get the session title for display in session lists.
 	 * Returns "New session" before the first message, then the first user message (truncated).
 	 */
@@ -179,6 +190,26 @@ export interface IChatViewContainer {
 	 * Returns null if no session has been created yet.
 	 */
 	getSessionId(): string | null;
+
+	/**
+	 * Get the agent's current working directory for this view.
+	 * Returns an empty string if not yet known (React not mounted).
+	 * Used by the Session Manager to group views by folder.
+	 */
+	getWorkingDirectory(): string;
+
+	/**
+	 * Get the current context window usage for this view's session.
+	 * Returns null if the agent hasn't reported usage yet.
+	 */
+	getUsage(): SessionUsage | null;
+
+	/**
+	 * Get the current session mode label (e.g. permission mode for
+	 * Claude Code: "Always Ask", "Accept Edits", "Plan", ...).
+	 * Returns null if the session has no mode concept.
+	 */
+	getModeLabel(): string | null;
 
 	/**
 	 * Close this view permanently.

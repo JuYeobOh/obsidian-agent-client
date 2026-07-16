@@ -263,6 +263,16 @@ export default class AgentClientPlugin extends Plugin {
 	private _acpClients: Map<string, AcpClient> = new Map();
 	/** Floating button container (independent from chat view instances) */
 	private floatingButton: FloatingButtonContainer | null = null;
+	/**
+	 * Init payload for views created via openChatViewForSession, keyed by
+	 * leaf id. Delivered through this side channel (consumed in the ChatView
+	 * constructor) because Obsidian may call setState() only after React has
+	 * mounted, which would miss mount-time initial values.
+	 */
+	private pendingViewInit = new Map<
+		string,
+		{ agentId?: string; cwd?: string; sessionId?: string }
+	>();
 	/** Counter for generating unique floating chat instance IDs */
 	private floatingChatCounter = 0;
 
@@ -568,7 +578,9 @@ export default class AgentClientPlugin extends Plugin {
 			return;
 		}
 
-		const leaf = workspace.getLeftLeaf(false);
+		// Right side, alongside the chat: the manager is how you move between
+		// sessions, so it belongs in the same pane you're reading them in.
+		const leaf = workspace.getRightLeaf(false);
 		if (leaf) {
 			await leaf.setViewState({
 				type: VIEW_TYPE_SESSION_MANAGER,
@@ -703,6 +715,61 @@ export default class AgentClientPlugin extends Plugin {
 				}
 			}, 0);
 		}
+	}
+
+	/**
+	 * Open a chat view targeting a specific working directory and/or a
+	 * previously saved session. Used by the Session Manager's folder tree.
+	 *
+	 * - `cwd` only: opens a new chat working in that directory.
+	 * - `cwd` + `sessionId`: opens a view and restores that session once ready.
+	 */
+	async openChatViewForSession(options: {
+		agentId?: string;
+		cwd?: string;
+		sessionId?: string;
+	}): Promise<void> {
+		const leaf = this.createNewChatLeaf(true);
+		if (!leaf) {
+			getLogger().warn("[AgentClient] Failed to create new leaf");
+			return;
+		}
+
+		// Side channel consumed by the ChatView constructor (see pendingViewInit)
+		const leafId = (leaf as { id?: string }).id;
+		if (leafId) {
+			this.pendingViewInit.set(leafId, {
+				agentId: options.agentId ?? this.settings.defaultAgentId,
+				cwd: options.cwd,
+				sessionId: options.sessionId,
+			});
+		}
+
+		await leaf.setViewState({
+			type: VIEW_TYPE_CHAT,
+			active: true,
+			state: {
+				initialAgentId: options.agentId ?? this.settings.defaultAgentId,
+				initialCwd: options.cwd,
+				initialSessionId: options.sessionId,
+			},
+		});
+
+		await this.app.workspace.revealLeaf(leaf);
+	}
+
+	/**
+	 * Consume the pending init payload for a view (one-shot).
+	 * Called from the ChatView constructor.
+	 */
+	consumePendingViewInit(
+		viewId: string,
+	): { agentId?: string; cwd?: string; sessionId?: string } | undefined {
+		const pending = this.pendingViewInit.get(viewId);
+		if (pending) {
+			this.pendingViewInit.delete(viewId);
+		}
+		return pending;
 	}
 
 	/**

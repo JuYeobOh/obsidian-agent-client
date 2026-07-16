@@ -49,7 +49,7 @@ interface SessionStorageSettingsAccess {
 // ============================================================================
 
 /** Maximum number of saved sessions to keep */
-const MAX_SAVED_SESSIONS = 50;
+const MAX_SAVED_SESSIONS = 200;
 
 export class SessionStorage {
 	private plugin: AgentClientPlugin;

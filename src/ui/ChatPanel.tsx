@@ -66,6 +66,10 @@ export interface ChatPanelCallbacks {
 	getSessionStatus: () => SessionStatus;
 	getSessionTitle: () => string;
 	getSessionId: () => string | null;
+	hasWorkInProgress: () => boolean;
+	getWorkingDirectory: () => string;
+	getUsage: () => import("../types/session").SessionUsage | null;
+	getModeLabel: () => string | null;
 	getInputState: () => ChatInputState | null;
 	setInputState: (state: ChatInputState) => void;
 	canSend: () => boolean;
@@ -305,6 +309,32 @@ export function ChatPanel({
 		return plugin.getAvailableAgents();
 	}, [plugin]);
 
+	// Current session mode label (e.g. Claude Code permission mode) for the
+	// Session Manager. Prefers configOptions (category "mode"), falls back to
+	// legacy modes.
+	const currentModeLabel = useMemo((): string | null => {
+		if (session.configOptions) {
+			const modeOption = session.configOptions.find(
+				(o) => o.category === "mode" && o.type === "select",
+			);
+			if (modeOption && modeOption.type === "select") {
+				const current = flattenConfigSelectOptions(
+					modeOption.options,
+				).find((o) => o.value === modeOption.currentValue);
+				return current?.name ?? modeOption.currentValue;
+			}
+		}
+		if (session.modes) {
+			const { availableModes, currentModeId } = session.modes;
+			return (
+				availableModes.find((m) => m.id === currentModeId)?.name ??
+				currentModeId ??
+				null
+			);
+		}
+		return null;
+	}, [session.configOptions, session.modes]);
+
 	// ============================================================
 	// Chat Actions
 	// ============================================================
@@ -392,6 +422,8 @@ export function ChatPanel({
 	// ============================================================
 	const handleNewChatWithPersist = useCallback(
 		async (requestedAgentId?: string) => {
+			// Fresh blank chat: no session is being opened
+			openingSessionIdRef.current = null;
 			await handleNewChat(requestedAgentId);
 			// Persist agent ID for this view (survives Obsidian restart)
 			if (requestedAgentId) {
@@ -432,6 +464,63 @@ export function ChatPanel({
 			autoExportIfEnabled,
 			agent.clearMessages,
 			agent.restartSession,
+			sessionHistory.invalidateCache,
+		],
+	);
+
+	// Open a saved session IN THIS VIEW (replaces the current chat).
+	// Triggered by the Session Manager — reusing the live view skips the
+	// expensive adapter process spawn, so it opens much faster than a new view.
+	const handleOpenSessionInView = useCallback(
+		async (sessionId: string, cwd: string, agentId?: string) => {
+			// Claim this session id immediately (before any await) so the
+			// Session Manager stops rendering its saved twin while we load.
+			openingSessionIdRef.current = sessionId;
+			plugin.viewRegistry.notifyChange();
+			// Clicking through sessions quickly fires overlapping opens on this
+			// same view. The newest click always wins: if the claim no longer
+			// points at us, a later open took over and finishing this one would
+			// clobber it.
+			const superseded = () => openingSessionIdRef.current !== sessionId;
+			try {
+				if (messages.length > 0) {
+					await autoExportIfEnabled("newChat", messages, session);
+					if (superseded()) return;
+				}
+				setAgentCwd(cwd);
+				agent.clearMessages();
+				// Only an agent switch needs a respawn. Switching folders just
+				// swaps the session: loadSession carries the new cwd and
+				// resyncs the client's fallback cwd, so we keep the warm
+				// process instead of paying to restart it.
+				const nextAgentId = agentId ?? session.agentId;
+				if (nextAgentId !== session.agentId) {
+					await agent.restartSession(nextAgentId, cwd);
+					if (superseded()) return;
+				}
+				await sessionHistory.restoreSession(sessionId, cwd);
+				if (superseded()) return;
+				sessionHistory.invalidateCache();
+			} catch (error) {
+				// Open failed — release the claim so the saved session shows again
+				if (openingSessionIdRef.current === sessionId) {
+					openingSessionIdRef.current = null;
+					plugin.viewRegistry.notifyChange();
+				}
+				new Notice(
+					`[Agent Client] Failed to open session: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
+		},
+		[
+			plugin,
+			messages,
+			session,
+			agentCwd,
+			autoExportIfEnabled,
+			agent.clearMessages,
+			agent.restartSession,
+			sessionHistory.restoreSession,
 			sessionHistory.invalidateCache,
 		],
 	);
@@ -964,6 +1053,11 @@ export function ChatPanel({
 		agent.hasActivePermission,
 		sessionHistory.loading,
 		hasMessages,
+		// cwd changes move this view to a different folder group
+		agentCwd,
+		// mode / usage are shown per-session in the Session Manager
+		currentModeLabel,
+		session.usage,
 	]);
 
 	// ============================================================
@@ -1058,12 +1152,16 @@ export function ChatPanel({
 	const rejectActivePermissionRef = useRef(agent.rejectActivePermission);
 	const handleStopGenerationRef = useRef(handleStopGeneration);
 	const handleExportChatRef = useRef(handleExportChat);
+	const handleOpenSessionInViewRef = useRef(handleOpenSessionInView);
+	const handleNewChatInDirectoryRef = useRef(handleNewChatInDirectory);
 	handleNewChatWithPersistRef.current = handleNewChatWithPersist;
 	handleNewChatRef.current = handleNewChat;
 	approveActivePermissionRef.current = agent.approveActivePermission;
 	rejectActivePermissionRef.current = agent.rejectActivePermission;
 	handleStopGenerationRef.current = handleStopGeneration;
 	handleExportChatRef.current = handleExportChat;
+	handleOpenSessionInViewRef.current = handleOpenSessionInView;
+	handleNewChatInDirectoryRef.current = handleNewChatInDirectory;
 
 	useEffect(() => {
 		const workspace = plugin.app.workspace;
@@ -1142,6 +1240,35 @@ export function ChatPanel({
 				if (targetViewId && targetViewId !== viewId) return;
 				void handleExportChatRef.current();
 			}),
+
+			// Open a saved session in this view (from Session Manager)
+			ws.on(
+				"agent-client:open-session-requested",
+				(
+					targetViewId?: string,
+					sessionId?: string,
+					cwd?: string,
+					agentId?: string,
+				) => {
+					if (targetViewId && targetViewId !== viewId) return;
+					if (!sessionId || !cwd) return;
+					void handleOpenSessionInViewRef.current(
+						sessionId,
+						cwd,
+						agentId,
+					);
+				},
+			),
+
+			// Start a new chat in a specific directory in this view
+			ws.on(
+				"agent-client:new-chat-in-directory",
+				(targetViewId?: string, cwd?: string) => {
+					if (targetViewId && targetViewId !== viewId) return;
+					if (!cwd) return;
+					void handleNewChatInDirectoryRef.current(cwd);
+				},
+			),
 		];
 
 		return () => {
@@ -1194,6 +1321,12 @@ export function ChatPanel({
 	const hasActivePermissionRef = useRef(agent.hasActivePermission);
 	const sessionHistoryLoadingRef = useRef(sessionHistory.loading);
 	const handleSendMessageRef = useRef(handleSendMessage);
+	const agentCwdRef = useRef(agentCwd);
+	agentCwdRef.current = agentCwd;
+	const sessionUsageRef = useRef(session.usage ?? null);
+	sessionUsageRef.current = session.usage ?? null;
+	const modeLabelRef = useRef(currentModeLabel);
+	modeLabelRef.current = currentModeLabel;
 	inputValueRef.current = inputValue;
 	attachedFilesRef.current = attachedFiles;
 	isSessionReadyRef.current = isSessionReady;
@@ -1219,11 +1352,22 @@ export function ChatPanel({
 			},
 			getSessionTitle: () =>
 				computeSessionTitle(
-					sessionIdRef.current,
+					openingSessionIdRef.current ?? sessionIdRef.current,
 					plugin.settingsService.getSnapshot().savedSessions ?? [],
 					messagesRef.current,
 				),
-			getSessionId: () => sessionIdRef.current,
+			// Report the session being opened the instant an open begins, so the
+			// Session Manager treats this view as that session (hides its saved
+			// twin) without waiting for the async load to settle.
+			getSessionId: () =>
+				openingSessionIdRef.current ?? sessionIdRef.current,
+			// Only a live turn or a pending permission counts — a session that
+			// is merely loading may be taken over.
+			hasWorkInProgress: () =>
+				isSendingRef.current || hasActivePermissionRef.current,
+			getWorkingDirectory: () => agentCwdRef.current,
+			getUsage: () => sessionUsageRef.current,
+			getModeLabel: () => modeLabelRef.current,
 			getInputState: () => ({
 				text: inputValueRef.current,
 				files: attachedFilesRef.current,

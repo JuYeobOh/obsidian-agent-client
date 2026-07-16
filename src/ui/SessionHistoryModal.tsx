@@ -23,7 +23,7 @@ import { truncateTitle } from "../utils/text";
  * Displays session title and asks user to confirm deletion.
  * Calls onConfirm callback only when user clicks Delete button.
  */
-class ConfirmDeleteModal extends Modal {
+export class ConfirmDeleteModal extends Modal {
 	private sessionTitle: string;
 	private onConfirm: () => void | Promise<void>;
 
