@@ -10,11 +10,14 @@ import {
 } from "obsidian";
 
 import type { AttachedFile, ChatInputState, ChatMessage } from "../types/chat";
+import { formatCwdForDisplay } from "../plugin";
 import { isSameDirectory } from "../utils/platform";
 import { computeSessionTitle } from "../services/session-helpers";
 import { useHistoryModal } from "../hooks/useHistoryModal";
 import { useChatActions } from "../hooks/useChatActions";
 import { ChangeDirectoryModal } from "./ChangeDirectoryModal";
+import { RewindModal } from "./RewindModal";
+import { SessionManagerComponent } from "./SessionManagerView";
 import { addRenameSessionMenuItem } from "./EditTitleModal";
 
 // Service imports
@@ -269,6 +272,8 @@ export function ChatPanel({
 	// Local State
 	// ============================================================
 	const [isUpdateAvailable, setIsUpdateAvailable] = useState(false);
+	// Session list drawer, slid over this pane from the left
+	const [isSessionDrawerOpen, setIsSessionDrawerOpen] = useState(false);
 
 	// Input state (for broadcast commands)
 	const [inputValue, setInputValue] = useState("");
@@ -1525,18 +1530,65 @@ export function ChatPanel({
 			/>
 		);
 
-	const cwdBanner =
-		agentCwd !== vaultPath && !isSameDirectory(agentCwd, vaultPath) ? (
-			<div className="agent-client-cwd-banner" title={agentCwd}>
-				<span
-					className="agent-client-cwd-banner-icon"
-					ref={(el) => {
-						if (el) setIcon(el, "folder-open");
-					}}
+	// Always shown, even at the vault root: which folder a session runs in is
+	// easy to lose track of, and this doubles as the handle for the session
+	// drawer. The full path stays in the tooltip when it's abbreviated.
+	const cwdBanner = (
+		<div
+			className={`agent-client-cwd-banner is-clickable ${isSessionDrawerOpen ? "is-active" : ""}`}
+			title={`${agentCwd}\n(Click to browse sessions)`}
+			role="button"
+			aria-expanded={isSessionDrawerOpen}
+			tabIndex={0}
+			onClick={() => setIsSessionDrawerOpen((open) => !open)}
+			onKeyDown={(e) => {
+				if (e.key === "Enter" || e.key === " ") {
+					e.preventDefault();
+					setIsSessionDrawerOpen((open) => !open);
+				}
+			}}
+		>
+			<span
+				className="agent-client-cwd-banner-icon"
+				ref={(el) => {
+					if (el) setIcon(el, "folder-open");
+				}}
+			/>
+			<span className="agent-client-cwd-banner-path">
+				{formatCwdForDisplay(
+					agentCwd,
+					settings.displaySettings.cwdDisplay,
+				)}
+			</span>
+			<span
+				className="agent-client-cwd-banner-chevron"
+				ref={(el) => {
+					if (el)
+						setIcon(
+							el,
+							isSessionDrawerOpen ? "chevron-down" : "chevron-right",
+						);
+				}}
+			/>
+		</div>
+	);
+
+	// Session list as a drawer inside this pane rather than a separate leaf, so
+	// switching sessions never costs you the chat you're looking at.
+	const sessionDrawer = isSessionDrawerOpen ? (
+		<>
+			<div
+				className="agent-client-session-drawer-scrim"
+				onClick={() => setIsSessionDrawerOpen(false)}
+			/>
+			<div className="agent-client-session-drawer">
+				<SessionManagerComponent
+					plugin={plugin}
+					onNavigate={() => setIsSessionDrawerOpen(false)}
 				/>
-				<span className="agent-client-cwd-banner-path">{agentCwd}</span>
 			</div>
-		) : null;
+		</>
+	) : null;
 
 	const messageListElement = (
 		<MessageList
