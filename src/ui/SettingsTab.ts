@@ -11,6 +11,7 @@ import type {
 	CustomAgentSettings,
 	AgentEnvVar,
 	ChatViewLocation,
+	CwdDisplay,
 } from "../plugin";
 import { resolveCommandPath, resolveCommandPathInWsl } from "../utils/paths";
 import {
@@ -206,6 +207,27 @@ export class AgentClientSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						await this.plugin.settingsService.updateSettings({
 							chatViewLocation: value as ChatViewLocation,
+						});
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Folder path in chat header")
+			.setDesc(
+				"How much of the session's working directory to show. The full path is always in the tooltip.",
+			)
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption("name", "Folder only (my-wiki)")
+					.addOption("parent", "Folder with parent (research/my-wiki)")
+					.addOption("full", "Full path")
+					.setValue(this.plugin.settings.displaySettings.cwdDisplay)
+					.onChange(async (value) => {
+						await this.plugin.settingsService.updateSettings({
+							displaySettings: {
+								...this.plugin.settings.displaySettings,
+								cwdDisplay: value as CwdDisplay,
+							},
 						});
 					}),
 			);

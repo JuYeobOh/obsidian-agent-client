@@ -70,6 +70,26 @@ export type ChatViewLocation =
 	| "editor-tab"
 	| "editor-split";
 
+/**
+ * How much of the agent's working directory to show in the chat header.
+ * - 'name': just the folder ("my-wiki")
+ * - 'parent': folder with its parent ("research/my-wiki")
+ * - 'full': the absolute path
+ */
+export type CwdDisplay = "name" | "parent" | "full";
+
+/** Trim an absolute path down to the configured number of trailing segments. */
+export function formatCwdForDisplay(cwd: string, mode: CwdDisplay): string {
+	if (mode === "full") return cwd;
+	const segments = cwd
+		.replace(/\\/g, "/")
+		.replace(/\/+$/, "")
+		.split("/")
+		.filter((s) => s.length > 0);
+	if (segments.length === 0) return cwd;
+	return segments.slice(mode === "name" ? -1 : -2).join("/");
+}
+
 export interface AgentClientPluginSettings {
 	gemini: GeminiAgentSettings;
 	claude: ClaudeAgentSettings;
@@ -120,9 +140,24 @@ export interface AgentClientPluginSettings {
 		maxSelectionLength: number;
 		showEmojis: boolean;
 		fontSize: number | null;
+		/** Whether tool calls (function/edit blocks) are shown in the chat */
+		showToolCalls: boolean;
+		/** How much of the working-directory path the chat header shows */
+		cwdDisplay: CwdDisplay;
 	};
 	// Locally saved session metadata (for agents without session/list support)
 	savedSessions: SavedSessionInfo[];
+	// Session Manager folder grouping state
+	sessionManager: {
+		/** Pinned folder paths (normalized keys) — pinned groups sort first */
+		pinnedFolders: string[];
+		/** Folder alias display names (normalized key → alias) */
+		folderAliases: Record<string, string>;
+		/** Collapsed folder groups (normalized keys) */
+		collapsedFolders: string[];
+		/** User-defined display order of folder groups (normalized keys) */
+		folderOrder: string[];
+	};
 	// Last used model per agent (agentId → modelId)
 	lastUsedModels: Record<string, string>;
 	// Last used mode per agent (agentId → modeId)
@@ -197,8 +232,16 @@ const DEFAULT_SETTINGS: AgentClientPluginSettings = {
 		maxSelectionLength: 10000,
 		showEmojis: true,
 		fontSize: null,
+		showToolCalls: true,
+		cwdDisplay: "parent",
 	},
 	savedSessions: [],
+	sessionManager: {
+		pinnedFolders: [],
+		folderAliases: {},
+		collapsedFolders: [],
+		folderOrder: [],
+	},
 	lastUsedModels: {},
 	lastUsedModes: {},
 	lastUsedConfigOptions: {},
@@ -1119,10 +1162,32 @@ export default class AgentClientPlugin extends Plugin {
 				),
 				showEmojis: bool(rd.showEmojis, D.displaySettings.showEmojis),
 				fontSize: parseChatFontSize(rd.fontSize),
+				showToolCalls: bool(
+					rd.showToolCalls,
+					D.displaySettings.showToolCalls,
+				),
+				cwdDisplay: enumVal(
+					rd.cwdDisplay,
+					["name", "parent", "full"],
+					D.displaySettings.cwdDisplay,
+				),
 			},
 			savedSessions: Array.isArray(raw.savedSessions)
 				? (raw.savedSessions as SavedSessionInfo[])
 				: D.savedSessions,
+			sessionManager: (() => {
+				const rsm = obj(raw.sessionManager) ?? {};
+				const strArray = (v: unknown): string[] =>
+					Array.isArray(v)
+						? v.filter((x): x is string => typeof x === "string")
+						: [];
+				return {
+					pinnedFolders: strArray(rsm.pinnedFolders),
+					folderAliases: strRecord(rsm.folderAliases),
+					collapsedFolders: strArray(rsm.collapsedFolders),
+					folderOrder: strArray(rsm.folderOrder),
+				};
+			})(),
 			lastUsedModels: strRecord(raw.lastUsedModels),
 			lastUsedModes: strRecord(raw.lastUsedModes),
 			lastUsedConfigOptions: nestedStrRecord(raw.lastUsedConfigOptions),
