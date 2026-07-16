@@ -18,6 +18,9 @@ import { EditorView } from "@codemirror/view";
 import { Compartment, StateEffect } from "@codemirror/state";
 import { getLogger, Logger } from "../utils/logger";
 
+/** File extensions offered in @-mention suggestions. */
+export const MENTIONABLE_EXTENSIONS = new Set(["md", "pdf"]);
+
 // ============================================================================
 // Port Types (from vault-access.port.ts)
 // ============================================================================
@@ -148,7 +151,11 @@ export class VaultService implements IVaultAccess {
 	// ========================================================================
 
 	private rebuildIndex() {
-		this.files = this.plugin.app.vault.getMarkdownFiles();
+		// Markdown notes plus PDFs. PDFs are binary, so they're referenced by
+		// path (resource_link) at send time rather than read as text.
+		this.files = this.plugin.app.vault
+			.getFiles()
+			.filter((f) => MENTIONABLE_EXTENSIONS.has(f.extension));
 		this.lastBuild = Date.now();
 		this.logger.log(
 			`[VaultService] Rebuilt index with ${this.files.length} files`,
@@ -158,7 +165,7 @@ export class VaultService implements IVaultAccess {
 	private registerVaultEvents() {
 		this.vaultEventRefs.push(
 			this.plugin.app.vault.on("create", (file) => {
-				if (file instanceof TFile && file.extension === "md") {
+				if (file instanceof TFile && MENTIONABLE_EXTENSIONS.has(file.extension)) {
 					this.rebuildIndex();
 				}
 			}),
@@ -168,7 +175,7 @@ export class VaultService implements IVaultAccess {
 		);
 		this.vaultEventRefs.push(
 			this.plugin.app.vault.on("rename", (file) => {
-				if (file instanceof TFile && file.extension === "md") {
+				if (file instanceof TFile && MENTIONABLE_EXTENSIONS.has(file.extension)) {
 					this.rebuildIndex();
 				}
 			}),

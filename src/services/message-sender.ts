@@ -199,6 +199,30 @@ interface ProcessedNote {
 	originalLength: number;
 }
 
+/** A mentioned file that must be referenced by path, not read as text. */
+function isBinaryMention(file: { extension?: string }): boolean {
+	return file.extension?.toLowerCase() === "pdf";
+}
+
+/** Build a resource_link (path reference) for a binary mentioned file. */
+function buildMentionResourceLink(
+	file: { path: string; extension?: string },
+	input: PreparePromptInput,
+): ResourceLinkPromptContent {
+	let absolutePath = input.vaultBasePath
+		? `${input.vaultBasePath}/${file.path}`
+		: file.path;
+	if (input.convertToWsl) {
+		absolutePath = convertWindowsPathToWsl(absolutePath);
+	}
+	return {
+		type: "resource_link",
+		uri: buildFileUri(absolutePath),
+		name: file.path.split("/").pop() ?? file.path,
+		mimeType: "application/pdf",
+	};
+}
+
 /**
  * Read a note, truncate if needed, and resolve its absolute path.
  */
@@ -451,15 +475,25 @@ async function preparePromptWithEmbeddedContext(
 	vaultAccess: IVaultAccess,
 	mentionedNotes: Array<{
 		noteTitle: string;
-		file: { path: string; stat: { mtime: number } } | undefined;
+		file: { path: string; extension?: string; stat: { mtime: number } } | undefined;
 	}>,
 ): Promise<PreparePromptResult> {
 	const maxNoteLen = input.maxNoteLength ?? DEFAULT_MAX_NOTE_LENGTH;
 	const resourceBlocks: ResourcePromptContent[] = [];
+	const mentionResourceLinks: ResourceLinkPromptContent[] = [];
 
 	// Build Resource blocks for each mentioned note
 	for (const { file } of mentionedNotes) {
 		if (!file) continue;
+
+		// PDFs are binary — reference them by path so the agent can open them
+		// with its own tools, rather than reading them as (garbage) text.
+		if (isBinaryMention(file)) {
+			mentionResourceLinks.push(
+				buildMentionResourceLink(file, input),
+			);
+			continue;
+		}
 
 		const note = await processNote(
 			file,
@@ -520,6 +554,7 @@ async function preparePromptWithEmbeddedContext(
 	const agentContent: PromptContent[] = [
 		...systemBlocks,
 		...resourceBlocks,
+		...mentionResourceLinks,
 		...autoMentionBlocks,
 		...(input.message || autoMentionPrefix
 			? [
@@ -551,15 +586,23 @@ async function preparePromptWithTextContext(
 	vaultAccess: IVaultAccess,
 	mentionedNotes: Array<{
 		noteTitle: string;
-		file: { path: string; stat: { mtime: number } } | undefined;
+		file: { path: string; extension?: string; stat: { mtime: number } } | undefined;
 	}>,
 ): Promise<PreparePromptResult> {
 	const maxNoteLen = input.maxNoteLength ?? DEFAULT_MAX_NOTE_LENGTH;
 	const contextBlocks: string[] = [];
 
+	const mentionResourceLinks: ResourceLinkPromptContent[] = [];
+
 	// Build XML context blocks for each mentioned note
 	for (const { file } of mentionedNotes) {
 		if (!file) continue;
+
+		// PDFs are binary — reference by path instead of reading as text.
+		if (isBinaryMention(file)) {
+			mentionResourceLinks.push(buildMentionResourceLink(file, input));
+			continue;
+		}
 
 		const note = await processNote(
 			file,
@@ -616,6 +659,7 @@ async function preparePromptWithTextContext(
 		...(agentMessageText
 			? [{ type: "text" as const, text: agentMessageText }]
 			: []),
+		...mentionResourceLinks,
 		...(input.images || []),
 		...(input.resourceLinks || []),
 	];

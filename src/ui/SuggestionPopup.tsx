@@ -100,6 +100,12 @@ export function SuggestionPopup({
 				>
 					<div className="agent-client-mention-dropdown-item-name">
 						{note.name}
+						{note.extension &&
+							note.extension.toLowerCase() !== "md" && (
+								<span className="agent-client-mention-dropdown-item-ext">
+									{note.extension.toUpperCase()}
+								</span>
+							)}
 					</div>
 					<div className="agent-client-mention-dropdown-item-path">
 						{note.path}
