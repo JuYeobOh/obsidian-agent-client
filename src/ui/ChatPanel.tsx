@@ -435,6 +435,26 @@ export function ChatPanel({
 	);
 
 	/**
+	 * Return keyboard focus to the composer textarea.
+	 *
+	 * Obsidian drops focus onto <body> when a modal or overlay goes away, so
+	 * dismissing the rewind picker or the session drawer left the chat input
+	 * deaf — every keystroke (most visibly Backspace) went nowhere until the
+	 * user clicked back into it. Call this from every dismiss path.
+	 */
+	const focusComposer = useCallback(() => {
+		window.setTimeout(() => {
+			const container = containerElProp ?? containerRef.current;
+			const textarea = container?.querySelector(
+				"textarea.agent-client-chat-input-textarea",
+			);
+			if (textarea instanceof HTMLTextAreaElement) {
+				textarea.focus();
+			}
+		}, 0);
+	}, [containerElProp]);
+
+	/**
 	 * Restore the conversation to the given user message: drop it and every
 	 * later message, then load its text back into the composer for editing.
 	 */
@@ -469,8 +489,17 @@ export function ChatPanel({
 		new RewindModal(plugin.app, {
 			items,
 			onSelect: handleRewindToIndex,
+			// Dismissing ("Never mind") must hand focus back too, or the
+			// composer goes deaf until clicked.
+			onClosed: focusComposer,
 		}).open();
-	}, [plugin.app, userMessageIndices, userMessageText, handleRewindToIndex]);
+	}, [
+		plugin.app,
+		userMessageIndices,
+		userMessageText,
+		handleRewindToIndex,
+		focusComposer,
+	]);
 
 	const handleSendMessageWithGeminiDismiss = useCallback(
 		(content: string, attachments?: AttachedFile[]) => {
@@ -1556,10 +1585,17 @@ export function ChatPanel({
 			role="button"
 			aria-expanded={isSessionDrawerOpen}
 			tabIndex={0}
-			onClick={() => setIsSessionDrawerOpen((open) => !open)}
+			onClick={() => {
+				// Closing hands focus back to the composer — the banner is
+				// focusable (tabIndex=0), so after a toggle-close it would
+				// otherwise keep swallowing keystrokes.
+				if (isSessionDrawerOpen) focusComposer();
+				setIsSessionDrawerOpen((open) => !open);
+			}}
 			onKeyDown={(e) => {
 				if (e.key === "Enter" || e.key === " ") {
 					e.preventDefault();
+					if (isSessionDrawerOpen) focusComposer();
 					setIsSessionDrawerOpen((open) => !open);
 				}
 			}}
@@ -1595,7 +1631,12 @@ export function ChatPanel({
 		<>
 			<div
 				className="agent-client-session-drawer-scrim"
-				onClick={() => setIsSessionDrawerOpen(false)}
+				onClick={() => {
+					setIsSessionDrawerOpen(false);
+					// The click landed on an element that's about to unmount;
+					// without this, focus falls to <body> and keys go dead.
+					focusComposer();
+				}}
 			/>
 			<div className="agent-client-session-drawer">
 				<SessionManagerComponent

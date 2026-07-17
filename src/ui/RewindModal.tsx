@@ -26,6 +26,10 @@ export interface RewindItem {
 export interface RewindModalProps {
 	items: RewindItem[];
 	onSelect: (index: number) => void;
+	/** Fired on every close, selection or dismissal — the opener uses it to
+	 *  hand keyboard focus back to the composer, which Obsidian otherwise
+	 *  drops on <body>. */
+	onClosed?: () => void;
 }
 
 function RewindContent({
@@ -100,5 +104,6 @@ export class RewindModal extends Modal {
 			this.root = null;
 		}
 		this.contentEl.empty();
+		this.props.onClosed?.();
 	}
 }
