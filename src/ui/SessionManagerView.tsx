@@ -267,7 +267,10 @@ const SavedSessionItem = React.memo(function SavedSessionItem({
 	session: SavedSessionInfo;
 	plugin: AgentClientPlugin;
 	agentName: string;
-	onOpen: (session: SavedSessionInfo) => void;
+	onOpen: (
+		session: SavedSessionInfo,
+		opts?: { newView?: boolean },
+	) => void;
 }) {
 	const moreRef = useRef<HTMLButtonElement>(null);
 
@@ -276,8 +279,11 @@ const SavedSessionItem = React.memo(function SavedSessionItem({
 	}, []);
 
 	const title = session.title ?? "Untitled Session";
+	// Ctrl/Cmd-click opens the session in an additional view (its own tab
+	// icon) instead of taking over the current one.
 	const handleClick = useCallback(
-		() => onOpen(session),
+		(e: React.MouseEvent) =>
+			onOpen(session, { newView: e.ctrlKey || e.metaKey }),
 		[onOpen, session],
 	);
 
@@ -286,9 +292,15 @@ const SavedSessionItem = React.memo(function SavedSessionItem({
 			const menu = new Menu();
 
 			menu.addItem((item) => {
-				item.setTitle("Open in new view")
+				item.setTitle("Open")
 					.setIcon("play")
 					.onClick(() => onOpen(session));
+			});
+
+			menu.addItem((item) => {
+				item.setTitle("Open in new view")
+					.setIcon("plus-square")
+					.onClick(() => onOpen(session, { newView: true }));
 			});
 
 			addRenameSessionMenuItem(menu, plugin, session.sessionId, title, {
@@ -404,8 +416,11 @@ function FolderGroupSection({
 	onUnpin: (key: string) => void;
 	onMove: (key: string, direction: -1 | 1) => void;
 	onRename: (key: string, currentLabel: string) => void;
-	onNewChat: (path: string) => void;
-	onOpenSaved: (session: SavedSessionInfo) => void;
+	onNewChat: (path: string, opts?: { newView?: boolean }) => void;
+	onOpenSaved: (
+		session: SavedSessionInfo,
+		opts?: { newView?: boolean },
+	) => void;
 	onDragStart: (key: string) => void;
 	onDrop: (targetKey: string) => void;
 }) {
@@ -507,7 +522,7 @@ function FolderGroupSection({
 	const handleNewChatClick = useCallback(
 		(e: React.MouseEvent) => {
 			e.stopPropagation();
-			onNewChat(group.path);
+			onNewChat(group.path, { newView: e.ctrlKey || e.metaKey });
 		},
 		[onNewChat, group.path],
 	);
@@ -886,8 +901,11 @@ export function SessionManagerComponent({
 	}, [plugin]);
 
 	const handleNewChat = useCallback(
-		(path: string) => {
-			const target = pickTargetView();
+		(path: string, opts?: { newView?: boolean }) => {
+			// newView (Ctrl/Cmd-click): the user explicitly wants another
+			// view — and is knowingly paying for another adapter process —
+			// so skip reuse and fall through to the create-a-view branch.
+			const target = opts?.newView ? null : pickTargetView();
 			if (target) {
 				target.focus();
 				plugin.app.workspace.trigger(
@@ -904,8 +922,10 @@ export function SessionManagerComponent({
 	);
 
 	const handleOpenSaved = useCallback(
-		(session: SavedSessionInfo) => {
-			// Already open in a view? Focus it instead of duplicating.
+		(session: SavedSessionInfo, opts?: { newView?: boolean }) => {
+			// Already open in a view? Focus it instead of duplicating — even
+			// on Ctrl/Cmd-click: two views loading the same session id would
+			// fight over one transcript.
 			const live = plugin.viewRegistry
 				.getAll()
 				.find((v) => v.getSessionId() === session.sessionId);
@@ -914,7 +934,9 @@ export function SessionManagerComponent({
 				onNavigate?.();
 				return;
 			}
-			const target = pickTargetView();
+			// newView (Ctrl/Cmd-click): skip reuse, fall through to the
+			// create-a-view branch below.
+			const target = opts?.newView ? null : pickTargetView();
 			if (target) {
 				target.focus();
 				plugin.app.workspace.trigger(

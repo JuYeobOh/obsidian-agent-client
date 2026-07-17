@@ -2764,39 +2764,13 @@ If your plugin does not need CSS, delete this file.
 	font-size: var(--font-ui-small);
 }
 
-/* ============================================================
-   Single-pane (Claude Code-like) chat: hide the tab header bar
-   ============================================================ */
-
 /*
- * Background sessions each need their own leaf, so the tab strip grew a bot
- * icon per session. Collapse them to exactly ONE chat icon — the Session
- * Manager is the real switcher — while leaving one entry point into the chat.
- *
- * Only the chat's own tabs are touched, not the strip: it is shared with
- * Outline/Backlinks/etc., which must stay reachable.
- *
- * Two cases, so the surviving icon is always the meaningful one:
- *   1. a chat is active  → keep the active chat tab (icon reflects what's shown)
- *   2. no chat is active → keep the first chat tab (a way back into the chat)
- *
- * Extra chats stay reachable via the Session Manager, and are closable from the
- * session row menu (⋯ → Close).
+ * No tab-hiding here anymore. One-icon-per-deliberate-view is enforced
+ * behaviorally: session clicks REUSE the current view (so no stray tabs
+ * appear), and a new tab is only created when the user asks for one
+ * (Ctrl/Cmd-click, "Open in new view") — whose icon must then stay visible
+ * and clickable, which is exactly what the old hiding rules broke.
  */
-.workspace-tab-header-container-inner:has(
-		.workspace-tab-header[data-type="agent-client-chat-view"].is-active
-	)
-	.workspace-tab-header[data-type="agent-client-chat-view"]:not(.is-active) {
-	display: none;
-}
-
-.workspace-tab-header-container-inner:not(
-		:has(.workspace-tab-header[data-type="agent-client-chat-view"].is-active)
-	)
-	.workspace-tab-header[data-type="agent-client-chat-view"]
-	~ .workspace-tab-header[data-type="agent-client-chat-view"] {
-	display: none;
-}
 
 /* Non-markdown (e.g. PDF) badge in @-mention suggestions */
 .agent-client-mention-dropdown-item-ext {
