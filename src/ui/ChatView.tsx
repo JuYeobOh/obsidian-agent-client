@@ -111,6 +111,10 @@ interface ChatViewState extends Record<string, unknown> {
 	initialCwd?: string;
 	/** Saved session to restore once the agent is ready (ephemeral, not persisted) */
 	initialSessionId?: string;
+	/** Whether the user deliberately created this view as an extra one
+	 *  (Ctrl/Cmd-click, "Open in new view"). Deliberate views keep their tab
+	 *  icon visible; auto-created background views hide it unless active. */
+	deliberateTab?: boolean;
 }
 
 export class ChatView extends ItemView implements IChatViewContainer {
@@ -127,6 +131,8 @@ export class ChatView extends ItemView implements IChatViewContainer {
 	private initialCwd: string | null = null;
 	/** Session to restore once ready, passed via state (ephemeral) */
 	private initialSessionId: string | null = null;
+	/** See ChatViewState.deliberateTab */
+	private deliberateTab = false;
 	/** The live session id, tracked so it can be restored after an app restart */
 	private currentSessionId: string | null = null;
 	/** Callbacks to notify React when agentId is restored from workspace state */
@@ -160,7 +166,24 @@ export class ChatView extends ItemView implements IChatViewContainer {
 			this.initialAgentId = pending.agentId ?? null;
 			this.initialCwd = pending.cwd ?? null;
 			this.initialSessionId = pending.sessionId ?? null;
+			this.deliberateTab = pending.deliberate ?? false;
 		}
+	}
+
+	/**
+	 * Mark this view's tab header so CSS can tell a deliberately created
+	 * extra view (icon stays visible) from an auto-created background one
+	 * (icon hidden unless active). The header element is Obsidian-managed and
+	 * recreated on layout changes, so this is re-applied from onOpen's
+	 * layout-change listener rather than set once.
+	 */
+	private applyTabHeaderClass(): void {
+		const header = (this.leaf as { tabHeaderEl?: HTMLElement })
+			.tabHeaderEl;
+		header?.toggleClass(
+			"agent-client-deliberate-tab",
+			this.deliberateTab,
+		);
 	}
 
 	getViewType() {
@@ -188,6 +211,7 @@ export class ChatView extends ItemView implements IChatViewContainer {
 			// after the app is closed and reopened.
 			initialSessionId:
 				this.currentSessionId ?? this.initialSessionId ?? undefined,
+			deliberateTab: this.deliberateTab || undefined,
 		};
 	}
 
@@ -203,6 +227,8 @@ export class ChatView extends ItemView implements IChatViewContainer {
 		this.initialAgentId = state.initialAgentId ?? null;
 		this.initialCwd = state.initialCwd ?? this.initialCwd;
 		this.initialSessionId = state.initialSessionId ?? this.initialSessionId;
+		this.deliberateTab = state.deliberateTab ?? this.deliberateTab;
+		this.applyTabHeaderClass();
 		await super.setState(state, result);
 
 		// Notify React when agentId is restored and differs from previous value
@@ -441,6 +467,15 @@ export class ChatView extends ItemView implements IChatViewContainer {
 
 		// Register with plugin's view registry
 		this.plugin.viewRegistry.register(this);
+
+		// Obsidian recreates tab header elements on layout changes, dropping
+		// any class we set — re-mark on every layout change.
+		this.applyTabHeaderClass();
+		this.registerEvent(
+			this.app.workspace.on("layout-change", () =>
+				this.applyTabHeaderClass(),
+			),
+		);
 
 		return Promise.resolve();
 	}

@@ -272,7 +272,12 @@ export default class AgentClientPlugin extends Plugin {
 	 */
 	private pendingViewInit = new Map<
 		string,
-		{ agentId?: string; cwd?: string; sessionId?: string }
+		{
+			agentId?: string;
+			cwd?: string;
+			sessionId?: string;
+			deliberate?: boolean;
+		}
 	>();
 	/** Counter for generating unique floating chat instance IDs */
 	private floatingChatCounter = 0;
@@ -729,6 +734,10 @@ export default class AgentClientPlugin extends Plugin {
 		agentId?: string;
 		cwd?: string;
 		sessionId?: string;
+		/** True when the user explicitly asked for an extra view (Ctrl/Cmd
+		 *  click, "Open in new view") — its tab icon stays visible. Absent for
+		 *  auto-created background views, whose icon hides unless active. */
+		deliberate?: boolean;
 	}): Promise<void> {
 		const leaf = this.createNewChatLeaf(true);
 		if (!leaf) {
@@ -743,6 +752,7 @@ export default class AgentClientPlugin extends Plugin {
 				agentId: options.agentId ?? this.settings.defaultAgentId,
 				cwd: options.cwd,
 				sessionId: options.sessionId,
+				deliberate: options.deliberate,
 			});
 		}
 
@@ -753,6 +763,7 @@ export default class AgentClientPlugin extends Plugin {
 				initialAgentId: options.agentId ?? this.settings.defaultAgentId,
 				initialCwd: options.cwd,
 				initialSessionId: options.sessionId,
+				deliberateTab: options.deliberate,
 			},
 		});
 
@@ -763,9 +774,14 @@ export default class AgentClientPlugin extends Plugin {
 	 * Consume the pending init payload for a view (one-shot).
 	 * Called from the ChatView constructor.
 	 */
-	consumePendingViewInit(
-		viewId: string,
-	): { agentId?: string; cwd?: string; sessionId?: string } | undefined {
+	consumePendingViewInit(viewId: string):
+		| {
+				agentId?: string;
+				cwd?: string;
+				sessionId?: string;
+				deliberate?: boolean;
+		  }
+		| undefined {
 		const pending = this.pendingViewInit.get(viewId);
 		if (pending) {
 			this.pendingViewInit.delete(viewId);

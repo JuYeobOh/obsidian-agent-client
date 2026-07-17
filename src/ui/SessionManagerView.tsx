@@ -914,7 +914,10 @@ export function SessionManagerComponent({
 					path,
 				);
 			} else {
-				void plugin.openChatViewForSession({ cwd: path });
+				void plugin.openChatViewForSession({
+					cwd: path,
+					deliberate: opts?.newView,
+				});
 			}
 			onNavigate?.();
 		},
@@ -951,6 +954,7 @@ export function SessionManagerComponent({
 					agentId: session.agentId,
 					cwd: session.cwd,
 					sessionId: session.sessionId,
+					deliberate: opts?.newView,
 				});
 			}
 			onNavigate?.();
