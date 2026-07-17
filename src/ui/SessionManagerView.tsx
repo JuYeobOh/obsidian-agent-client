@@ -40,7 +40,7 @@ function normalizeFolderKey(path: string): string {
 	return Platform.isWin ? normalized.toLowerCase() : normalized;
 }
 
-/** Last path segment, for display (e.g. "C:\vault\my-wiki" → "my-wiki"). */
+/** Last path segment, for display (e.g. "C:\vault\notes" → "notes"). */
 function folderBasename(path: string): string {
 	const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
 	const segments = normalized.split("/").filter((s) => s.length > 0);

@@ -72,8 +72,9 @@ export type ChatViewLocation =
 
 /**
  * How much of the agent's working directory to show in the chat header.
- * - 'name': just the folder ("my-wiki")
- * - 'parent': folder with its parent ("research/my-wiki")
+ * For "/home/me/vault/notes":
+ * - 'name': just the folder ("notes")
+ * - 'parent': folder with its parent ("vault/notes")
  * - 'full': the absolute path
  */
 export type CwdDisplay = "name" | "parent" | "full";

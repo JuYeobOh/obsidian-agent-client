@@ -3,10 +3,12 @@ import {
 	PluginSettingTab,
 	Setting,
 	DropdownComponent,
+	FileSystemAdapter,
 	Platform,
 	SecretComponent,
 } from "obsidian";
 import type AgentClientPlugin from "../plugin";
+import { formatCwdForDisplay } from "../plugin";
 import type {
 	CustomAgentSettings,
 	AgentEnvVar,
@@ -211,6 +213,18 @@ export class AgentClientSettingTab extends PluginSettingTab {
 					}),
 			);
 
+		// Show each option's effect on this vault's own path — a baked-in example
+		// folder only means something to the vault it was written from. Falls
+		// back to a bare label where there is no real path to demonstrate on
+		// (mobile / non-FileSystemAdapter).
+		const adapter = this.app.vault.adapter;
+		const examplePath =
+			adapter instanceof FileSystemAdapter ? adapter.getBasePath() : null;
+		const cwdOptionLabel = (label: string, mode: CwdDisplay): string =>
+			examplePath
+				? `${label} (${formatCwdForDisplay(examplePath, mode)})`
+				: label;
+
 		new Setting(containerEl)
 			.setName("Folder path in chat header")
 			.setDesc(
@@ -218,8 +232,11 @@ export class AgentClientSettingTab extends PluginSettingTab {
 			)
 			.addDropdown((dropdown) =>
 				dropdown
-					.addOption("name", "Folder only (my-wiki)")
-					.addOption("parent", "Folder with parent (research/my-wiki)")
+					.addOption("name", cwdOptionLabel("Folder only", "name"))
+					.addOption(
+						"parent",
+						cwdOptionLabel("Folder with parent", "parent"),
+					)
 					.addOption("full", "Full path")
 					.setValue(this.plugin.settings.displaySettings.cwdDisplay)
 					.onChange(async (value) => {
