@@ -180,6 +180,21 @@ export interface IChatViewContainer {
 	hasWorkInProgress(): boolean;
 
 	/**
+	 * Whether the user deliberately created this view as an extra one
+	 * (Ctrl/Cmd-click, "Open in new view"). Deliberate views keep their tab
+	 * icon visible and are never picked as the primary view. Optional:
+	 * floating views have no tab and don't implement it.
+	 */
+	isDeliberateTab?(): boolean;
+
+	/**
+	 * Re-apply tab header marks (primary/deliberate CSS classes). Called by
+	 * the plugin when the primary view changes. Optional: floating views
+	 * have no tab header.
+	 */
+	refreshTabHeader?(): void;
+
+	/**
 	 * Get the session title for display in session lists.
 	 * Returns "New session" before the first message, then the first user message (truncated).
 	 */

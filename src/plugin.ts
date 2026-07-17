@@ -16,6 +16,7 @@ import {
 } from "./ui/FloatingChatView";
 import { FloatingButtonContainer } from "./ui/FloatingButton";
 import { ChatViewRegistry } from "./services/view-registry";
+import type { IChatViewContainer } from "./services/view-registry";
 import {
 	createSettingsService,
 	type SettingsService,
@@ -279,6 +280,48 @@ export default class AgentClientPlugin extends Plugin {
 			deliberate?: boolean;
 		}
 	>();
+
+	/**
+	 * The "main" chat view — the one whose tab icon is always visible even
+	 * when inactive, alongside deliberately created (Ctrl-click) tabs. Only
+	 * auto-created background views hide their icon. The badge transfers to
+	 * the replacement view when a plain session click can't reuse the busy
+	 * primary (see openChatViewForSession), so the visible-icon set stays
+	 * "one main + the tabs the user asked for".
+	 */
+	private primaryViewId: string | null = null;
+
+	getPrimaryViewId(): string | null {
+		return this.primaryViewId;
+	}
+
+	setPrimaryView(viewId: string | null): void {
+		if (this.primaryViewId === viewId) return;
+		this.primaryViewId = viewId;
+		for (const view of this.viewRegistry.getAll()) {
+			view.refreshTabHeader?.();
+		}
+	}
+
+	/**
+	 * Keep the primary badge valid: it must sit on a live, non-deliberate
+	 * sidebar view whenever one exists. Called when views open, close, or
+	 * learn their deliberate flag from restored state.
+	 */
+	reconcilePrimaryView(): void {
+		const candidates = this.viewRegistry
+			.getAll()
+			.filter((v) => v.viewType === "sidebar");
+		const isDeliberate = (v: IChatViewContainer) =>
+			v.isDeliberateTab?.() ?? false;
+		const current = candidates.find(
+			(v) => v.viewId === this.primaryViewId,
+		);
+		if (current && !isDeliberate(current)) return;
+		const next =
+			candidates.find((v) => !isDeliberate(v)) ?? candidates[0] ?? null;
+		this.setPrimaryView(next?.viewId ?? null);
+	}
 	/** Counter for generating unique floating chat instance IDs */
 	private floatingChatCounter = 0;
 
@@ -766,6 +809,14 @@ export default class AgentClientPlugin extends Plugin {
 				deliberateTab: options.deliberate,
 			},
 		});
+
+		// A plain (non-Ctrl) open lands here only because the primary view was
+		// busy — the new view is now what the user works in, so the always-
+		// visible badge moves to it. The busy old view keeps generating as a
+		// hidden background tab. Deliberate views keep their own icon instead.
+		if (!options.deliberate && leafId) {
+			this.setPrimaryView(leafId);
+		}
 
 		await this.app.workspace.revealLeaf(leaf);
 	}

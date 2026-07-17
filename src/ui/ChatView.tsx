@@ -184,6 +184,20 @@ export class ChatView extends ItemView implements IChatViewContainer {
 			"agent-client-deliberate-tab",
 			this.deliberateTab,
 		);
+		header?.toggleClass(
+			"agent-client-primary-tab",
+			this.plugin.getPrimaryViewId() === this.viewId,
+		);
+	}
+
+	/** IChatViewContainer — see the interface docs. */
+	isDeliberateTab(): boolean {
+		return this.deliberateTab;
+	}
+
+	/** IChatViewContainer — see the interface docs. */
+	refreshTabHeader(): void {
+		this.applyTabHeaderClass();
 	}
 
 	getViewType() {
@@ -228,6 +242,9 @@ export class ChatView extends ItemView implements IChatViewContainer {
 		this.initialCwd = state.initialCwd ?? this.initialCwd;
 		this.initialSessionId = state.initialSessionId ?? this.initialSessionId;
 		this.deliberateTab = state.deliberateTab ?? this.deliberateTab;
+		// A restored deliberate flag can invalidate a primary claim made in
+		// onOpen before this state arrived — re-settle, then re-mark.
+		this.plugin.reconcilePrimaryView();
 		this.applyTabHeaderClass();
 		await super.setState(state, result);
 
@@ -468,6 +485,9 @@ export class ChatView extends ItemView implements IChatViewContainer {
 		// Register with plugin's view registry
 		this.plugin.viewRegistry.register(this);
 
+		// Claim/settle the primary badge now that this view is registered.
+		this.plugin.reconcilePrimaryView();
+
 		// Obsidian recreates tab header elements on layout changes, dropping
 		// any class we set — re-mark on every layout change.
 		this.applyTabHeaderClass();
@@ -485,6 +505,9 @@ export class ChatView extends ItemView implements IChatViewContainer {
 
 		// Unregister from plugin's view registry
 		this.plugin.viewRegistry.unregister(this.viewId);
+
+		// If this view held the primary badge, hand it to a surviving view.
+		this.plugin.reconcilePrimaryView();
 
 		// Cleanup is handled by React useEffect cleanup in ChatPanel
 		// which performs auto-export and closeSession

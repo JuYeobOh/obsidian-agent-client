@@ -2769,36 +2769,28 @@ If your plugin does not need CSS, delete this file.
    ============================================================ */
 
 /*
- * Two kinds of chat views exist:
+ * Three kinds of chat views exist; ChatView stamps the classes on the
+ * Obsidian-managed tab header (re-applied on layout-change):
  *
- * - Deliberate: created by the user (Ctrl/Cmd-click, "Open in new view").
- *   Marked `agent-client-deliberate-tab` on the tab header by ChatView; its
- *   icon always shows — that's the point of asking for one.
+ * - Primary (`agent-client-primary-tab`): THE main chat. Exactly one
+ *   non-deliberate view holds the badge (plugin.reconcilePrimaryView), and
+ *   it transfers to the replacement view when a plain click can't reuse a
+ *   busy primary. Always visible — it's the way back to your main chat.
+ * - Deliberate (`agent-client-deliberate-tab`): extra views the user asked
+ *   for (Ctrl/Cmd-click, "Open in new view"). Always visible — that's the
+ *   point of asking for one.
  * - Background: auto-created when a session is opened while every view is
  *   mid-turn (the running answer must not be abandoned, so it keeps its own
- *   view and finishes in the background). Its icon is HIDDEN unless active,
- *   so plain clicks never appear to grow the tab strip; the session manager
- *   is how you reach it, and focusing it reveals the icon.
+ *   view and finishes there). Hidden unless active, so plain clicks never
+ *   appear to grow the strip; the session manager reaches it, and focusing
+ *   it reveals the icon.
  *
  * Only the chat's own tabs are touched, not the strip: it is shared with
- * Outline/Backlinks/etc., which must stay reachable. When no chat is active
- * the first chat tab survives as the entry point back into the chat.
+ * Outline/Backlinks/etc., which must stay reachable.
  */
-.workspace-tab-header-container-inner:has(
-		.workspace-tab-header[data-type="agent-client-chat-view"].is-active
-	)
-	.workspace-tab-header[data-type="agent-client-chat-view"]:not(
+.workspace-tab-header[data-type="agent-client-chat-view"]:not(
 		.is-active,
-		.agent-client-deliberate-tab
-	) {
-	display: none;
-}
-
-.workspace-tab-header-container-inner:not(
-		:has(.workspace-tab-header[data-type="agent-client-chat-view"].is-active)
-	)
-	.workspace-tab-header[data-type="agent-client-chat-view"]
-	~ .workspace-tab-header[data-type="agent-client-chat-view"]:not(
+		.agent-client-primary-tab,
 		.agent-client-deliberate-tab
 	) {
 	display: none;
