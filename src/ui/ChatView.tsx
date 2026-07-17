@@ -115,6 +115,11 @@ interface ChatViewState extends Record<string, unknown> {
 	 *  (Ctrl/Cmd-click, "Open in new view"). Deliberate views keep their tab
 	 *  icon visible; auto-created background views hide it unless active. */
 	deliberateTab?: boolean;
+	/** Whether this view held the primary badge when the layout was saved.
+	 *  Persisted so a restart hands the badge back to the same view — without
+	 *  it, whichever non-deliberate view restores first would claim it, and a
+	 *  leftover hidden background view could steal the main chat's icon. */
+	primaryTab?: boolean;
 }
 
 export class ChatView extends ItemView implements IChatViewContainer {
@@ -226,6 +231,8 @@ export class ChatView extends ItemView implements IChatViewContainer {
 			initialSessionId:
 				this.currentSessionId ?? this.initialSessionId ?? undefined,
 			deliberateTab: this.deliberateTab || undefined,
+			primaryTab:
+				this.plugin.getPrimaryViewId() === this.viewId || undefined,
 		};
 	}
 
@@ -242,9 +249,16 @@ export class ChatView extends ItemView implements IChatViewContainer {
 		this.initialCwd = state.initialCwd ?? this.initialCwd;
 		this.initialSessionId = state.initialSessionId ?? this.initialSessionId;
 		this.deliberateTab = state.deliberateTab ?? this.deliberateTab;
-		// A restored deliberate flag can invalidate a primary claim made in
-		// onOpen before this state arrived — re-settle, then re-mark.
-		this.plugin.reconcilePrimaryView();
+		if (state.primaryTab) {
+			// This view held the badge when the layout was saved — take it
+			// back, overriding any first-to-restore claim made in the
+			// meantime by another (possibly background) view.
+			this.plugin.setPrimaryView(this.viewId);
+		} else {
+			// A restored deliberate flag can invalidate a primary claim made
+			// in onOpen before this state arrived — re-settle.
+			this.plugin.reconcilePrimaryView();
+		}
 		this.applyTabHeaderClass();
 		await super.setState(state, result);
 
