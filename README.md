@@ -1,4 +1,4 @@
-<h1 align="center">Agent Client Plugin for Obsidian — personal fork</h1>
+<h1 align="center">Agent Client — personal fork</h1>
 
 <p align="center">
   <img src="https://img.shields.io/github/license/RAIT-09/obsidian-agent-client" alt="License">
@@ -7,162 +7,145 @@
 > ### This is a modified fork, not the original plugin
 >
 > The original is **[RAIT-09/obsidian-agent-client](https://github.com/RAIT-09/obsidian-agent-client)**
-> by RAIT-09. Star it, report issues there, and support that project — not this one.
+> by RAIT-09 — an Obsidian plugin that brings AI agents (Claude Code, Codex,
+> Gemini CLI) into your vault over Zed's
+> [Agent Client Protocol](https://github.com/agentclientprotocol/agent-client-protocol).
+> Star it, report issues there, and support that project. Not this one.
 >
-> This fork exists to make the plugin behave more like the Claude Code app inside
-> Obsidian, for one person's own vault. It is **not** in the Obsidian community
-> plugin registry, ships no releases, and comes with no support. If you just want
-> the plugin, install the original.
+> **If you just want the plugin, [install the original](https://community.obsidian.md/plugins/agent-client).**
+> It is in the community registry, is maintained, and has documentation. This
+> fork is none of those things.
 >
-> Forked from upstream `89e2d75` (v0.11.0) — see [Changes in this fork](#changes-in-this-fork).
+> Forked from upstream `89e2d75` (v0.11.0).
 
-<p align="center">
-  <a href="README.ja.md">日本語はこちら</a>
-</p>
+## What this fork is for
 
-Bring AI agents (Claude Code, Codex, Gemini CLI) directly into Obsidian. Chat with your AI assistant right from your vault.
+Reshaping the plugin to work like the **Claude Code app, inside Obsidian**, for
+one person's research vault — two vault folders (`my-wiki`, `paper-wiki`) worked
+on in parallel, sessions kept warm, answers arriving in the background.
 
-Built on [Agent Client Protocol (ACP)](https://github.com/agentclientprotocol/agent-client-protocol) by Zed.
+Everything below is a change to RAIT-09's work. All the rest of the plugin —
+the agents, the protocol layer, the chat itself — is theirs.
 
-If the plugin is useful to you, the person to support is its original author:
+## What's different
 
-<p align="center">
-  <a href="https://www.buymeacoffee.com/rait09" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy the original author a coffee" width="180" height="50" ></a>
-</p>
+### Sessions
 
-https://github.com/user-attachments/assets/1c538349-b3fb-44dd-a163-7331cbca7824
+- **Folder tree.** Sessions group under the folder they run in, so two vault
+  folders no longer fight over one flat list. Folders can be pinned, renamed
+  (display-only alias), collapsed, and dragged into a manual order.
+- **Switching reuses the open view** instead of opening a tab per session.
+  Spawning the agent process is the slow part; reusing it makes switching
+  near-instant and stops the sidebar filling with icons. A view is left alone if
+  it has a turn running or a permission prompt waiting.
+- **The in-progress session reopens after a restart**, in its own folder, rather
+  than coming back blank.
+- **Sessions keep running when you switch away**, and say so when they finish —
+  named, because the point is knowing *which* one is ready.
 
-## Features
+### Chat
 
-- **Note Mentions**: Reference your notes with `@notename` syntax
-- **Image Attachments**: Paste or drag-and-drop images into the chat
-- **Slash Commands**: Use `/` commands provided by your agent
-- **Multi-Agent Support**: Switch between Claude Code, Codex, Gemini CLI, and custom agents
-- **Multi-Session**: Run multiple agents simultaneously in separate views
-- **Floating Chat**: A persistent, collapsible chat window for quick access
-- **Mode & Model Switching**: Change AI models and agent modes from the chat
-- **Session History**: Resume or fork previous conversations
-- **Chat Export**: Save conversations as Markdown notes
-- **Terminal Integration**: Let agents execute commands and return results
-- **MCP Support**: Agents use their configured MCP servers — no extra setup needed in the plugin
+- **Tool calls collapse by default**, expandable on click; a pending permission
+  request always stays open. A *Show tool calls* toggle hides them entirely.
+- **Rewind.** Esc interrupts a running generation; Esc when idle lists the
+  conversation's user messages, and picking one drops it and everything after,
+  putting its text back in the composer. This rewinds the *local* transcript
+  only — ACP exposes no truncation API, so the agent still holds the turns.
+- **Restyled**: plain white background, user messages as grey bubbles on the
+  right, more space between turns.
 
-## Installation
+### Composer
 
-### From Community Plugins (Recommended)
+- Options split out of the one truncated strip: permission mode on the left;
+  usage, model, effort, settings and send on the right. The agent picker is gone
+  — `/` already selects one.
+- **Usage popover.** Clicking the percentage shows the session's context window
+  *and* the subscription's 5-hour and weekly plan limits, like Claude Code's
+  `/usage`. ACP only reports per-session context, so plan limits are read from
+  the credentials the Claude Code CLI already stores locally, and sent only to
+  `api.anthropic.com`. Fails soft — API-key users just don't see them.
+- The active note sits in its own box above the input.
 
-1. Open **Settings → Community Plugins → Browse**
-2. Search for **"Agent Client"**
-3. Click **Install**, then **Enable**
+### Vault
 
-### Via BRAT (Pre-release Versions)
+- **PDF `@`-mentions.** Markdown is still inlined as text, but a PDF is passed
+  as a resource link for the agent to open, since embedding binary would be
+  garbage. Name collisions prefer the `.md` file, matching wikilink behaviour.
+- **The working directory is always shown** in the header, abbreviated to the
+  last one or two folders (configurable), full path on hover. Clicking it slides
+  the session list in over the chat pane instead of opening a separate leaf.
 
-To try pre-release versions before they are published to Community Plugins:
+## Bug fixes
 
-1. Install the [BRAT](https://github.com/TfTHacker/obsidian42-brat) plugin
-2. Go to **Settings → BRAT → Add Beta Plugin**
-3. Paste: `https://github.com/RAIT-09/obsidian-agent-client`
-4. Enable **Agent Client** from the plugin list
+These are bugs in the original, not in the fork's own features. They are meant
+to go back upstream as pull requests rather than live here:
 
-### Manual Installation
+| Fix | Symptom |
+| --- | --- |
+| Track the session's working directory | A prompt sent in one vault folder could create files in **another** — the connection only remembered its spawn folder. |
+| Drop duplicate `createSession` calls | Opening a chat failed with *"ACP connection closed"*. |
+| Keep the active agent on folder switch | *New chat in directory...* silently switched to the **default** agent. |
+| Call `createSession` through a ref | Every folder change spawned a stray blank session over the restored one. |
+| Adopt agent-pushed titles | Titles arrived (`session_info_update`) and were dropped, so a session stayed named after its whole first prompt. |
+| Paint restored messages after replay | Switching sessions flickered for several seconds. |
 
-1. Download `main.js`, `manifest.json`, `styles.css` from [Releases](https://github.com/RAIT-09/obsidian-agent-client/releases)
-2. Place them in `VaultFolder/.obsidian/plugins/agent-client/`
-3. Enable the plugin in **Settings → Community Plugins**
+## Install
 
-## Quick Start
+Not in the community registry, and no releases are published — so there is **no
+one-click link**. Build it yourself:
 
-Open a terminal (Terminal on macOS/Linux, PowerShell on Windows) and run the following commands.
+```bash
+git clone https://github.com/JuYeobOh/obsidian-agent-client.git
+cd obsidian-agent-client
+npm install
+npm run build
+```
 
-1. **Install an agent and its ACP adapter** (e.g., Claude Code):
-   ```bash
-   curl -fsSL https://claude.ai/install.sh | bash   # Install Claude Code
-   npm install -g @agentclientprotocol/claude-agent-acp   # Install ACP adapter
-   ```
+Then copy `main.js`, `manifest.json` and `styles.css` into your vault:
 
-2. **Login** (skip if using API key):
-   ```bash
-   claude
-   ```
-   Follow the prompts to authenticate with your Anthropic account.
+```
+<vault>/.obsidian/plugins/agent-client/
+```
 
-3. **Find the paths**:
-   ```bash
-   which node   # macOS/Linux
-   which claude-agent-acp
+and reload Obsidian (`Ctrl+R`).
 
-   where.exe node   # Windows
-   where.exe claude-agent-acp
-   ```
+> This fork keeps the original's plugin id (`agent-client`), so it **replaces**
+> the original rather than sitting beside it. If you have the real plugin
+> installed, this overwrites it — and its settings and saved sessions, in
+> `data.json`, carry over as-is.
 
-4. **Configure** in **Settings → Agent Client**:
-   - **Node.js path**: e.g., `/usr/local/bin/node`
-   - **Built-in agents → Claude Code → Path**: e.g., `/usr/local/bin/claude-agent-acp` (not `claude`)
-   - **API key**: Add your key, or leave empty if logged in via CLI
-
-5. **Start chatting**: Click the robot icon in the ribbon
-
-### Setup Guides
-
-- [Claude Code](https://rait-09.github.io/obsidian-agent-client/agent-setup/claude-code.html)
-- [Codex](https://rait-09.github.io/obsidian-agent-client/agent-setup/codex.html)
-- [Gemini CLI](https://rait-09.github.io/obsidian-agent-client/agent-setup/gemini-cli.html)
-- [Custom Agents](https://rait-09.github.io/obsidian-agent-client/agent-setup/custom-agents.html) (OpenCode, Qwen Code, Kiro, Mistral Vibe, etc.)
-
-**[Full Documentation](https://rait-09.github.io/obsidian-agent-client/)**
-
-## Changes in this fork
-
-All of these are modifications to the original work, made after upstream
-`89e2d75` (v0.11.0). Everything else is RAIT-09's.
-
-**Bug fixes** — these are upstream bugs, and are intended to go back as pull
-requests rather than live here:
-
-- The connection only remembered the folder it was spawned in, so a tool call in
-  a session opened from a different folder ran against the spawn folder — a
-  prompt in one vault subfolder could create files in another.
-- Opening a chat could fail with "ACP connection closed": persisted view state
-  arriving after mount re-ran session creation, and the second attempt tore down
-  the connection the first was building.
-- "New chat in directory..." passed `undefined` to `restartSession()`, whose
-  fallback is the *default* agent — changing folder silently switched agents.
-- `createSession` was named as an effect dependency while closing over the
-  working directory, so every folder change spawned a stray blank session.
-- Titles pushed by the agent (`session_info_update`) were received and dropped,
-  so a session stayed titled with its entire first prompt.
-
-**Features and UI**, specific to using Claude Code in a research vault:
-
-- Session manager: sessions grouped into a folder tree, with pinning, aliases,
-  collapse and manual ordering; selecting one loads it into the open view
-  instead of spawning another tab.
-- The in-progress session reopens after an Obsidian restart.
-- Tool calls collapse by default, with a toggle to hide them entirely.
-- Rewind: Esc when idle picks an earlier point to restore the local thread to.
-- Composer rebuilt, with a usage popover showing context *and* subscription
-  plan limits (read from the Claude Code CLI's local credentials).
-- `@`-mentions accept PDFs, passed as resource links rather than inlined text.
-- The working directory is always shown, and opens a session drawer in-pane.
-- Restyled chat: white background, right-aligned user bubbles, wider spacing.
+Requires the agent CLI itself; see the
+[original's documentation](https://rait-09.github.io/obsidian-agent-client/) for
+setting up Claude Code, Codex or Gemini CLI. Nothing about that changed here.
 
 ## Development
 
 ```bash
 npm install
-npm run dev
+npm run dev     # watch build
+npm run build   # typecheck + production build
+npm test        # 47 tests
 ```
 
-For production builds:
+`upstream` tracks RAIT-09's repository:
+
 ```bash
-npm run build
+git remote add upstream https://github.com/RAIT-09/obsidian-agent-client.git
 ```
 
-## License
+## Credits and license
+
+The plugin is the work of **[RAIT-09](https://github.com/RAIT-09)**, licensed
+Apache-2.0. If it is useful to you, support the original author:
+
+<p align="center">
+  <a href="https://www.buymeacoffee.com/rait09" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy the original author a coffee" width="180" height="50" ></a>
+</p>
 
 Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 Copyright 2025-2026 RAIT-09. This repository is a modified fork of
-[RAIT-09/obsidian-agent-client](https://github.com/RAIT-09/obsidian-agent-client);
-the files changed relative to upstream are described in
-[Changes in this fork](#changes-in-this-fork), and the commit history records
-each modification individually.
+[RAIT-09/obsidian-agent-client](https://github.com/RAIT-09/obsidian-agent-client),
+branched at `89e2d75` (v0.11.0). Files have been changed relative to that
+version; the changes are summarised above and recorded individually in the
+commit history.

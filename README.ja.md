@@ -15,7 +15,8 @@
 > サポートもありません。プラグインを使いたいだけであればオリジナルをどうぞ。
 >
 > アップストリーム `89e2d75`（v0.11.0）から分岐。変更点は
-> [英語版 README](README.md#changes-in-this-fork) を参照してください。
+> [英語版 README](README.md) を参照してください。以下はオリジナルの日本語 README を
+> そのまま残したもので、このフォークでの変更は反映されていません。
 
 AIエージェント（Claude Code、Codex、Gemini CLI）をObsidianに直接統合。Vault内からAIアシスタントとチャットできます。
 
@@ -126,5 +127,5 @@ Apache License 2.0 — 詳細は [LICENSE](LICENSE) と [NOTICE](NOTICE) を参�
 Copyright 2025-2026 RAIT-09. このリポジトリは
 [RAIT-09/obsidian-agent-client](https://github.com/RAIT-09/obsidian-agent-client)
 を改変したフォークです。アップストリームからの変更点は
-[英語版 README](README.md#changes-in-this-fork) に記載し、
+[英語版 README](README.md) に記載し、
 個々の変更はコミット履歴に残しています。

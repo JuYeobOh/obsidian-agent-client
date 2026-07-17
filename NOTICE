@@ -4,5 +4,5 @@ Copyright 2025-2026 RAIT-09
 This distribution is a modified fork of obsidian-agent-client
 (https://github.com/RAIT-09/obsidian-agent-client), branched at upstream
 commit 89e2d75 (v0.11.0). Files have been changed relative to that version;
-the modifications are summarised in README.md ("Changes in this fork") and
-recorded individually in the commit history.
+the modifications are summarised in README.md and recorded individually in the
+commit history.
