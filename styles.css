@@ -2738,6 +2738,10 @@ If your plugin does not need CSS, delete this file.
 .agent-client-rewind-item {
 	display: block;
 	width: 100%;
+	/* The list is a flex column: without this, overflowing items get
+	   vertically compressed to fit BEFORE the container starts scrolling,
+	   clipping every row's text. */
+	flex-shrink: 0;
 	text-align: left;
 	padding: 12px 14px;
 	border: none;
