@@ -2578,6 +2578,13 @@ If your plugin does not need CSS, delete this file.
 	border-radius: var(--radius-m);
 	/* Tinted to match the user's message bubbles */
 	background-color: var(--background-secondary);
+	/* The whole box toggles auto-mention, not just the +/✕ button */
+	cursor: pointer;
+	user-select: none;
+}
+
+.agent-client-active-note-box:hover {
+	background-color: var(--background-modifier-hover);
 }
 
 .agent-client-active-note-icon {

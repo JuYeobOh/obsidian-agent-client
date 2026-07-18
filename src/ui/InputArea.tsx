@@ -1041,9 +1041,33 @@ export function InputArea({
 			)}
 
 			{/* Active note (auto-mention) — its own bordered box above the input.
-			    Clicking ✕ toggles auto-mention off (struck through), not removed. */}
+			    The WHOLE box toggles auto-mention on/off (struck through, not
+			    removed); the +/✕ button stays as the visual affordance. */}
 			{mentions.activeNote && (
-				<div className="agent-client-active-note-box">
+				<div
+					className="agent-client-active-note-box is-clickable"
+					role="button"
+					tabIndex={0}
+					aria-pressed={!mentions.isAutoMentionDisabled}
+					title={
+						mentions.isAutoMentionDisabled
+							? "Enable auto-mention"
+							: "Disable auto-mention"
+					}
+					onClick={() =>
+						mentions.toggleAutoMention(
+							!mentions.isAutoMentionDisabled,
+						)
+					}
+					onKeyDown={(e) => {
+						if (e.key === "Enter" || e.key === " ") {
+							e.preventDefault();
+							mentions.toggleAutoMention(
+								!mentions.isAutoMentionDisabled,
+							);
+						}
+					}}
+				>
 					<span
 						className="agent-client-active-note-icon"
 						ref={(el) => {
@@ -1074,11 +1098,14 @@ export function InputArea({
 								? "Enable auto-mention"
 								: "Disable auto-mention"
 						}
-						onClick={() =>
+						onClick={(e) => {
+							// The box also toggles — without this, the click
+							// bubbles up and toggles twice (a net no-op).
+							e.stopPropagation();
 							mentions.toggleAutoMention(
 								!mentions.isAutoMentionDisabled,
-							)
-						}
+							);
+						}}
 						ref={(el) => {
 							if (el)
 								setIcon(
