@@ -115,6 +115,8 @@ export interface AgentClientPluginSettings {
 		tables: boolean;
 	};
 	debugMode: boolean;
+	/** Whether to query npm for adapter updates and show the update overlay */
+	checkAgentUpdates: boolean;
 	nodePath: string;
 	exportSettings: {
 		defaultFolder: string;
@@ -211,6 +213,7 @@ const DEFAULT_SETTINGS: AgentClientPluginSettings = {
 		tables: true,
 	},
 	debugMode: false,
+	checkAgentUpdates: true,
 	nodePath: "",
 	exportSettings: {
 		defaultFolder: "Agent Client",
@@ -1220,6 +1223,10 @@ export default class AgentClientPlugin extends Plugin {
 				};
 			})(),
 			debugMode: bool(raw.debugMode, D.debugMode),
+			checkAgentUpdates: bool(
+				raw.checkAgentUpdates,
+				D.checkAgentUpdates,
+			),
 			nodePath: str(raw.nodePath, D.nodePath),
 			exportSettings: {
 				defaultFolder: str(

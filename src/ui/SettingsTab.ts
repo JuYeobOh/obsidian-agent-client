@@ -855,6 +855,21 @@ export class AgentClientSettingTab extends PluginSettingTab {
 		new Setting(containerEl).setName("Developer").setHeading();
 
 		new Setting(containerEl)
+			.setName("Check for agent updates")
+			.setDesc(
+				"Query npm for newer adapter versions and show an update notice in the chat. Turn off to silence the notice.",
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.checkAgentUpdates)
+					.onChange(async (value) => {
+						await this.plugin.settingsService.updateSettings({
+							checkAgentUpdates: value,
+						});
+					}),
+			);
+
+		new Setting(containerEl)
 			.setName("Debug mode")
 			.setDesc(
 				"Enable debug logging to console. Useful for development and troubleshooting.",

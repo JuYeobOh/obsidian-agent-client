@@ -1053,6 +1053,12 @@ export function ChatPanel({
 	// Effects - Agent Update Check
 	// ============================================================
 	useEffect(() => {
+		if (!settings.checkAgentUpdates) {
+			// Also clears a notification that was set before the setting was
+			// turned off, so flipping it hides the overlay immediately.
+			setAgentUpdateNotification(null);
+			return;
+		}
 		if (!isSessionReady || !session.agentInfo?.name) {
 			return;
 		}
@@ -1064,7 +1070,12 @@ export function ChatPanel({
 			.catch((error) => {
 				logger.error("Failed to check agent update:", error);
 			});
-	}, [isSessionReady, session.agentInfo, logger]);
+	}, [
+		settings.checkAgentUpdates,
+		isSessionReady,
+		session.agentInfo,
+		logger,
+	]);
 
 	// ============================================================
 	// Effects - Save Session Messages on Turn End
