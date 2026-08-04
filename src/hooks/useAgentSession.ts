@@ -18,6 +18,7 @@ import type { AcpClient } from "../acp/acp-client";
 import type { ISettingsAccess } from "../services/settings-service";
 import type { ErrorInfo } from "../types/errors";
 import { extractErrorMessage } from "../utils/error-utils";
+import { isInjectedInstruction } from "../services/message-sender";
 import { getLogger } from "../utils/logger";
 import {
 	type AgentDisplayInfo,
@@ -107,6 +108,9 @@ export function useAgentSession(
 	const sessionRef = useRef(session);
 	sessionRef.current = session;
 
+	// Guard against duplicate concurrent createSession calls (same agent+cwd)
+	const creationInFlightRef = useRef<string | null>(null);
+
 	// ============================================================
 	// Session Update Handler (session-level only)
 	// ============================================================
@@ -138,6 +142,36 @@ export function useAgentSession(
 						configOptions: update.configOptions,
 					}));
 					break;
+				case "session_info_update": {
+					// The agent auto-generates a short title (Claude Code's
+					// session summary) and pushes it here. Adopt it so sessions
+					// aren't stuck showing the whole first prompt — but never
+					// clobber a title the user set themselves.
+					const nextTitle = update.title?.trim();
+					if (!nextTitle) break;
+					// Claude Code falls back to "the first prompt" until its
+					// background summarizer produces a real title — and our
+					// injected instructions lead that prompt, so early on the
+					// agent hands back our own boilerplate. Keep the user's
+					// message as the title until a real summary arrives.
+					if (isInjectedInstruction(nextTitle)) break;
+					const existing = settingsAccess
+						.getSavedSessions()
+						.find((s) => s.sessionId === update.sessionId);
+					if (
+						!existing ||
+						existing.titleIsCustom ||
+						existing.title === nextTitle
+					) {
+						break;
+					}
+					void settingsAccess.updateSession(update.sessionId, {
+						title: nextTitle,
+						// Keep list ordering driven by real activity
+						updatedAt: existing.updatedAt,
+					});
+					break;
+				}
 				case "usage_update":
 					setSession((prev) => ({
 						...prev,
@@ -171,6 +205,20 @@ export function useAgentSession(
 			const settings = settingsAccess.getSnapshot();
 			const agentId = overrideAgentId || getDefaultAgentId(settings);
 			const currentAgent = getCurrentAgent(settings, agentId);
+
+			// Drop duplicate concurrent requests for the same agent+cwd.
+			// Obsidian can deliver view state (initialAgentId) right after React
+			// mounts, re-running ChatPanel's create-session effect while the
+			// first creation is still initializing — the second initialize()
+			// would kill the first connection ("ACP connection closed").
+			const creationKey = `${agentId}|${effectiveCwd}`;
+			if (creationInFlightRef.current === creationKey) {
+				getLogger().log(
+					`[useAgentSession] Skipping duplicate concurrent createSession: ${creationKey}`,
+				);
+				return;
+			}
+			creationInFlightRef.current = creationKey;
 
 			setSession((prev) => ({
 				...prev,
@@ -212,6 +260,10 @@ export function useAgentSession(
 					effectiveCwd,
 				);
 
+				// Only a missing connection or an agent switch needs a respawn.
+				// A folder change does NOT: one process can host sessions from
+				// several folders, and newSession/loadSession carry the cwd (and
+				// resync the tool/terminal fallback cwd on the client).
 				const initResult =
 					!agentClient.isInitialized() ||
 					agentClient.getCurrentAgentId() !== agentId
@@ -288,6 +340,8 @@ export function useAgentSession(
 					suggestion:
 						"Please check the agent configuration and try again.",
 				});
+			} finally {
+				creationInFlightRef.current = null;
 			}
 		},
 		[agentClient, settingsAccess, workingDirectory, setErrorInfo],

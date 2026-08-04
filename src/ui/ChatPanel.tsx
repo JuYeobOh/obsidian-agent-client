@@ -10,11 +10,14 @@ import {
 } from "obsidian";
 
 import type { AttachedFile, ChatInputState, ChatMessage } from "../types/chat";
+import { formatCwdForDisplay } from "../plugin";
 import { isSameDirectory } from "../utils/platform";
 import { computeSessionTitle } from "../services/session-helpers";
 import { useHistoryModal } from "../hooks/useHistoryModal";
 import { useChatActions } from "../hooks/useChatActions";
 import { ChangeDirectoryModal } from "./ChangeDirectoryModal";
+import { RewindModal } from "./RewindModal";
+import { SessionManagerComponent } from "./SessionManagerView";
 import { addRenameSessionMenuItem } from "./EditTitleModal";
 
 // Service imports
@@ -66,6 +69,10 @@ export interface ChatPanelCallbacks {
 	getSessionStatus: () => SessionStatus;
 	getSessionTitle: () => string;
 	getSessionId: () => string | null;
+	hasWorkInProgress: () => boolean;
+	getWorkingDirectory: () => string;
+	getUsage: () => import("../types/session").SessionUsage | null;
+	getModeLabel: () => string | null;
 	getInputState: () => ChatInputState | null;
 	setInputState: (state: ChatInputState) => void;
 	canSend: () => boolean;
@@ -81,11 +88,21 @@ export interface ChatPanelProps {
 	variant: "sidebar" | "floating";
 	viewId: string;
 	workingDirectory?: string;
+	/** Initial agent working directory (overrides vault root for the session cwd) */
+	initialCwd?: string;
+	/** Saved session to restore once the agent is ready */
+	initialSessionId?: string;
 	initialAgentId?: string;
 	config?: { agent?: string; model?: string };
 	onRegisterCallbacks?: (callbacks: ChatPanelCallbacks) => void;
 	/** Called when agent ID changes (sidebar only — persists in Obsidian state) */
 	onAgentIdChanged?: (agentId: string) => void;
+	/** Called when the live session id changes (sidebar only — persisted so the
+	 *  in-progress session reopens after an app restart) */
+	onSessionIdChanged?: (sessionId: string | null) => void;
+	/** Called when the agent working directory changes (sidebar only —
+	 *  persisted so the view reopens in the right folder) */
+	onCwdChanged?: (cwd: string) => void;
 	/**
 	 * Called when the derived session title may have changed (sidebar only —
 	 * triggers Obsidian to re-read getDisplayText() and update the tab header).
@@ -134,10 +151,14 @@ export function ChatPanel({
 	variant,
 	viewId,
 	workingDirectory,
+	initialCwd,
+	initialSessionId,
 	initialAgentId,
 	config,
 	onRegisterCallbacks,
 	onAgentIdChanged,
+	onSessionIdChanged,
+	onCwdChanged,
 	onSessionTitleChanged,
 	onMinimize,
 	onClose,
@@ -176,8 +197,17 @@ export function ChatPanel({
 	}, [plugin, workingDirectory]);
 
 	// Agent working directory — defaults to vault path.
-	// Can be changed independently via "New chat in directory..." action.
-	const [agentCwd, setAgentCwd] = useState(vaultPath);
+	// Can be changed independently via "New chat in directory..." action,
+	// or set at open time via openChatViewForSession (initialCwd).
+	const [agentCwd, setAgentCwd] = useState(initialCwd ?? vaultPath);
+
+	// The session id this view is opening/restoring toward. Set synchronously
+	// the moment an open begins so the Session Manager reports THIS session as
+	// live immediately — otherwise, during the async load, session.sessionId
+	// still holds the previous/blank id and the saved twin of the session being
+	// opened renders alongside the live view (the "duplicated session" bug).
+	// Cleared once session.sessionId catches up (or on a fresh blank chat).
+	const openingSessionIdRef = useRef<string | null>(initialSessionId ?? null);
 
 	// ============================================================
 	// Custom Hooks
@@ -242,6 +272,8 @@ export function ChatPanel({
 	// Local State
 	// ============================================================
 	const [isUpdateAvailable, setIsUpdateAvailable] = useState(false);
+	// Session list drawer, slid over this pane from the left
+	const [isSessionDrawerOpen, setIsSessionDrawerOpen] = useState(false);
 
 	// Input state (for broadcast commands)
 	const [inputValue, setInputValue] = useState("");
@@ -281,6 +313,32 @@ export function ChatPanel({
 	const availableAgents = useMemo(() => {
 		return plugin.getAvailableAgents();
 	}, [plugin]);
+
+	// Current session mode label (e.g. Claude Code permission mode) for the
+	// Session Manager. Prefers configOptions (category "mode"), falls back to
+	// legacy modes.
+	const currentModeLabel = useMemo((): string | null => {
+		if (session.configOptions) {
+			const modeOption = session.configOptions.find(
+				(o) => o.category === "mode" && o.type === "select",
+			);
+			if (modeOption && modeOption.type === "select") {
+				const current = flattenConfigSelectOptions(
+					modeOption.options,
+				).find((o) => o.value === modeOption.currentValue);
+				return current?.name ?? modeOption.currentValue;
+			}
+		}
+		if (session.modes) {
+			const { availableModes, currentModeId } = session.modes;
+			return (
+				availableModes.find((m) => m.id === currentModeId)?.name ??
+				currentModeId ??
+				null
+			);
+		}
+		return null;
+	}, [session.configOptions, session.modes]);
 
 	// ============================================================
 	// Chat Actions
@@ -346,6 +404,103 @@ export function ChatPanel({
 
 	// Wrap send so the Gemini notice also dismisses on send, mirroring how
 	// useChatActions clears agentUpdateNotification inside handleSendMessage.
+	// ============================================================
+	// Rewind (Esc when idle) — pick a previous user message to restore the
+	// conversation to, like Claude Code's rewind. Selecting a message drops it
+	// and everything after from the local thread and loads its text back into
+	// the composer. NOTE: this rewinds the *local* transcript; the agent process
+	// still retains the earlier turns (ACP exposes no truncation/checkpoint API).
+	// ============================================================
+
+	// Indices (into `messages`) of every user message, oldest-first.
+	const userMessageIndices = useMemo(
+		() =>
+			messages.reduce<number[]>((acc, m, i) => {
+				if (m.role === "user") acc.push(i);
+				return acc;
+			}, []),
+		[messages],
+	);
+
+	const userMessageText = useCallback(
+		(index: number): string => {
+			const msg = messages[index];
+			if (!msg) return "";
+			const textContent = msg.content.find(
+				(c) => c.type === "text" || c.type === "text_with_context",
+			);
+			return textContent && "text" in textContent ? textContent.text : "";
+		},
+		[messages],
+	);
+
+	/**
+	 * Return keyboard focus to the composer textarea.
+	 *
+	 * Obsidian drops focus onto <body> when a modal or overlay goes away, so
+	 * dismissing the rewind picker or the session drawer left the chat input
+	 * deaf — every keystroke (most visibly Backspace) went nowhere until the
+	 * user clicked back into it. Call this from every dismiss path.
+	 */
+	const focusComposer = useCallback(() => {
+		window.setTimeout(() => {
+			const container = containerElProp ?? containerRef.current;
+			const textarea = container?.querySelector(
+				"textarea.agent-client-chat-input-textarea",
+			);
+			if (textarea instanceof HTMLTextAreaElement) {
+				textarea.focus();
+			}
+		}, 0);
+	}, [containerElProp]);
+
+	/**
+	 * Restore the conversation to the given user message: drop it and every
+	 * later message, then load its text back into the composer for editing.
+	 */
+	const handleRewindToIndex = useCallback(
+		(messageIndex: number) => {
+			const text = userMessageText(messageIndex);
+			agent.setMessagesFromLocal(messages.slice(0, messageIndex));
+			setInputValue(text);
+			// Best-effort focus so the restored text is ready to edit.
+			window.setTimeout(() => {
+				const container = containerElProp ?? containerRef.current;
+				const textarea = container?.querySelector(
+					"textarea.agent-client-chat-input-textarea",
+				);
+				if (textarea instanceof HTMLTextAreaElement) {
+					textarea.focus();
+					textarea.selectionStart = textarea.value.length;
+					textarea.selectionEnd = textarea.value.length;
+				}
+			}, 0);
+		},
+		[messages, userMessageText, agent.setMessagesFromLocal, containerElProp],
+	);
+
+	/** Open the rewind picker (Esc when idle). */
+	const handleOpenRewind = useCallback(() => {
+		const items = userMessageIndices.map((index) => ({
+			index,
+			text: userMessageText(index),
+		}));
+		if (items.length === 0) return;
+		new RewindModal(plugin.app, {
+			items,
+			onSelect: handleRewindToIndex,
+			// Dismissing ("Never mind") must hand focus back too, or the
+			// composer goes deaf until clicked.
+			onClosed: focusComposer,
+		}).open();
+	}, [
+		plugin.app,
+		userMessageIndices,
+		userMessageText,
+		handleRewindToIndex,
+		focusComposer,
+	]);
+
 	const handleSendMessageWithGeminiDismiss = useCallback(
 		(content: string, attachments?: AttachedFile[]) => {
 			setGeminiNoticeDismissed(true);
@@ -369,6 +524,8 @@ export function ChatPanel({
 	// ============================================================
 	const handleNewChatWithPersist = useCallback(
 		async (requestedAgentId?: string) => {
+			// Fresh blank chat: no session is being opened
+			openingSessionIdRef.current = null;
 			await handleNewChat(requestedAgentId);
 			// Persist agent ID for this view (survives Obsidian restart)
 			if (requestedAgentId) {
@@ -389,13 +546,18 @@ export function ChatPanel({
 
 	const handleNewChatInDirectory = useCallback(
 		async (directory: string) => {
+			// Fresh blank chat: no session is being opened
+			openingSessionIdRef.current = null;
 			// Auto-export current chat before switching
 			if (messages.length > 0) {
 				await autoExportIfEnabled("newChat", messages, session);
 			}
 			agent.clearMessages();
 			setAgentCwd(directory);
-			await agent.restartSession(undefined, directory);
+			// Pass the active agent explicitly — restartSession() falls back to
+			// the *default* agent when given undefined, which would silently
+			// switch agents on a folder change.
+			await agent.restartSession(session.agentId, directory);
 			sessionHistory.invalidateCache();
 		},
 		[
@@ -404,6 +566,63 @@ export function ChatPanel({
 			autoExportIfEnabled,
 			agent.clearMessages,
 			agent.restartSession,
+			sessionHistory.invalidateCache,
+		],
+	);
+
+	// Open a saved session IN THIS VIEW (replaces the current chat).
+	// Triggered by the Session Manager — reusing the live view skips the
+	// expensive adapter process spawn, so it opens much faster than a new view.
+	const handleOpenSessionInView = useCallback(
+		async (sessionId: string, cwd: string, agentId?: string) => {
+			// Claim this session id immediately (before any await) so the
+			// Session Manager stops rendering its saved twin while we load.
+			openingSessionIdRef.current = sessionId;
+			plugin.viewRegistry.notifyChange();
+			// Clicking through sessions quickly fires overlapping opens on this
+			// same view. The newest click always wins: if the claim no longer
+			// points at us, a later open took over and finishing this one would
+			// clobber it.
+			const superseded = () => openingSessionIdRef.current !== sessionId;
+			try {
+				if (messages.length > 0) {
+					await autoExportIfEnabled("newChat", messages, session);
+					if (superseded()) return;
+				}
+				setAgentCwd(cwd);
+				agent.clearMessages();
+				// Only an agent switch needs a respawn. Switching folders just
+				// swaps the session: loadSession carries the new cwd and
+				// resyncs the client's fallback cwd, so we keep the warm
+				// process instead of paying to restart it.
+				const nextAgentId = agentId ?? session.agentId;
+				if (nextAgentId !== session.agentId) {
+					await agent.restartSession(nextAgentId, cwd);
+					if (superseded()) return;
+				}
+				await sessionHistory.restoreSession(sessionId, cwd);
+				if (superseded()) return;
+				sessionHistory.invalidateCache();
+			} catch (error) {
+				// Open failed — release the claim so the saved session shows again
+				if (openingSessionIdRef.current === sessionId) {
+					openingSessionIdRef.current = null;
+					plugin.viewRegistry.notifyChange();
+				}
+				new Notice(
+					`[Agent Client] Failed to open session: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
+		},
+		[
+			plugin,
+			messages,
+			session,
+			agentCwd,
+			autoExportIfEnabled,
+			agent.clearMessages,
+			agent.restartSession,
+			sessionHistory.restoreSession,
 			sessionHistory.invalidateCache,
 		],
 	);
@@ -658,11 +877,82 @@ export function ChatPanel({
 	// ============================================================
 	// Effects - Session Lifecycle
 	// ============================================================
-	// Initialize session on mount
+	// Initialize session on mount (and when a different agent is requested).
+	//
+	// Call through a ref: agent.createSession is a useCallback that closes over
+	// the working directory, so listing it as a dependency made this effect
+	// re-fire on every folder change — spawning a fresh blank session that
+	// clobbered the one we had just restored (the restored transcript stayed on
+	// screen under a brand-new session id, so the real session also kept
+	// showing as a separate "saved" entry).
+	const createSessionRef = useRef(agent.createSession);
+	createSessionRef.current = agent.createSession;
 	useEffect(() => {
 		logger.log("[Debug] Starting connection setup via useSession...");
-		void agent.createSession(config?.agent || initialAgentId);
-	}, [agent.createSession, config?.agent, initialAgentId]);
+		void createSessionRef.current(config?.agent || initialAgentId);
+	}, [config?.agent, initialAgentId, logger]);
+
+	// Restore a saved session once the agent is ready (openChatViewForSession).
+	// One-shot: consumed via ref so re-renders / later ready-transitions don't
+	// re-restore after the user has moved on to another session.
+	const pendingRestoreSessionIdRef = useRef<string | null>(
+		initialSessionId ?? null,
+	);
+	const restoreSessionRef = useRef(sessionHistory.restoreSession);
+	restoreSessionRef.current = sessionHistory.restoreSession;
+	const restartSessionRef = useRef(agent.restartSession);
+	restartSessionRef.current = agent.restartSession;
+	useEffect(() => {
+		if (!isSessionReady || !pendingRestoreSessionIdRef.current) return;
+		const sid = pendingRestoreSessionIdRef.current;
+		pendingRestoreSessionIdRef.current = null;
+
+		// A session can only be loaded from the folder it belongs to, so the
+		// session's own recorded cwd wins over whatever folder this view
+		// happens to be in (e.g. a restart that fell back to the vault root).
+		const saved = plugin.settingsService
+			.getSavedSessions()
+			.find((s) => s.sessionId === sid);
+		const restoreCwd = saved?.cwd || agentCwd;
+
+		void (async () => {
+			try {
+				logger.log(
+					`[ChatPanel] Restoring initial session: ${sid} (cwd: ${restoreCwd})`,
+				);
+				// Re-init the agent in the session's folder when it differs.
+				if (!isSameDirectory(restoreCwd, agentCwd)) {
+					setAgentCwd(restoreCwd);
+					await restartSessionRef.current(
+						sessionRef.current.agentId,
+						restoreCwd,
+					);
+				}
+				await restoreSessionRef.current(sid, restoreCwd);
+			} catch (error) {
+				logger.error(
+					"[ChatPanel] Initial session restore failed:",
+					error,
+				);
+				openingSessionIdRef.current = null;
+				plugin.viewRegistry.notifyChange();
+				new Notice(
+					"[Agent Client] Failed to restore session. Starting a new chat instead.",
+				);
+			}
+		})();
+	}, [isSessionReady, agentCwd, logger, plugin]);
+
+	// Release the opening claim once the live session id catches up to the
+	// session we were opening — from here on session.sessionId is authoritative.
+	useEffect(() => {
+		if (
+			openingSessionIdRef.current &&
+			session.sessionId === openingSessionIdRef.current
+		) {
+			openingSessionIdRef.current = null;
+		}
+	}, [session.sessionId]);
 
 	// Apply configured model (a select config option with category "model")
 	// when session is ready.
@@ -763,6 +1053,12 @@ export function ChatPanel({
 	// Effects - Agent Update Check
 	// ============================================================
 	useEffect(() => {
+		if (!settings.checkAgentUpdates) {
+			// Also clears a notification that was set before the setting was
+			// turned off, so flipping it hides the overlay immediately.
+			setAgentUpdateNotification(null);
+			return;
+		}
 		if (!isSessionReady || !session.agentInfo?.name) {
 			return;
 		}
@@ -774,7 +1070,12 @@ export function ChatPanel({
 			.catch((error) => {
 				logger.error("Failed to check agent update:", error);
 			});
-	}, [isSessionReady, session.agentInfo, logger]);
+	}, [
+		settings.checkAgentUpdates,
+		isSessionReady,
+		session.agentInfo,
+		logger,
+	]);
 
 	// ============================================================
 	// Effects - Save Session Messages on Turn End
@@ -806,6 +1107,19 @@ export function ChatPanel({
 				`[ChatPanel] Session messages saved: ${session.sessionId}`,
 			);
 
+			// A session finishing in the background is otherwise invisible: the
+			// OS notification below only fires when Obsidian isn't focused, so
+			// a background turn completing while you work in another session
+			// would pass silently. Name it — the point is knowing *which* one.
+			if (plugin.viewRegistry.getFocusedId() !== viewId) {
+				const title = computeSessionTitle(
+					session.sessionId,
+					plugin.settingsService.getSnapshot().savedSessions ?? [],
+					messages,
+				);
+				new Notice(`[Agent Client] ${title} — response ready`);
+			}
+
 			// System notification on response completion
 			if (
 				settings.enableSystemNotifications &&
@@ -823,6 +1137,9 @@ export function ChatPanel({
 		sessionHistory.saveSessionMessages,
 		settings.enableSystemNotifications,
 		activeAgentLabel,
+		plugin.viewRegistry,
+		viewId,
+
 		logger,
 	]);
 
@@ -865,6 +1182,11 @@ export function ChatPanel({
 		agent.hasActivePermission,
 		sessionHistory.loading,
 		hasMessages,
+		// cwd changes move this view to a different folder group
+		agentCwd,
+		// mode / usage are shown per-session in the Session Manager
+		currentModeLabel,
+		session.usage,
 	]);
 
 	// ============================================================
@@ -883,6 +1205,21 @@ export function ChatPanel({
 	useEffect(() => {
 		onSessionTitleChanged?.();
 	}, [onSessionTitleChanged, sessionTitle]);
+
+	// Persist the live session id so the in-progress conversation reopens after
+	// the app restarts. Skipped while a session is still being opened so we
+	// never persist a transient/blank id.
+	useEffect(() => {
+		if (openingSessionIdRef.current) return;
+		onSessionIdChanged?.(session.sessionId);
+	}, [onSessionIdChanged, session.sessionId]);
+
+	// Persist the working directory alongside the session id — a session can
+	// only be loaded from the folder it belongs to, so reopening at the vault
+	// root would break restoring a subfolder's session.
+	useEffect(() => {
+		onCwdChanged?.(agentCwd);
+	}, [onCwdChanged, agentCwd]);
 
 	// ============================================================
 	// Effects - System Notification on Permission Request
@@ -944,12 +1281,16 @@ export function ChatPanel({
 	const rejectActivePermissionRef = useRef(agent.rejectActivePermission);
 	const handleStopGenerationRef = useRef(handleStopGeneration);
 	const handleExportChatRef = useRef(handleExportChat);
+	const handleOpenSessionInViewRef = useRef(handleOpenSessionInView);
+	const handleNewChatInDirectoryRef = useRef(handleNewChatInDirectory);
 	handleNewChatWithPersistRef.current = handleNewChatWithPersist;
 	handleNewChatRef.current = handleNewChat;
 	approveActivePermissionRef.current = agent.approveActivePermission;
 	rejectActivePermissionRef.current = agent.rejectActivePermission;
 	handleStopGenerationRef.current = handleStopGeneration;
 	handleExportChatRef.current = handleExportChat;
+	handleOpenSessionInViewRef.current = handleOpenSessionInView;
+	handleNewChatInDirectoryRef.current = handleNewChatInDirectory;
 
 	useEffect(() => {
 		const workspace = plugin.app.workspace;
@@ -1028,6 +1369,35 @@ export function ChatPanel({
 				if (targetViewId && targetViewId !== viewId) return;
 				void handleExportChatRef.current();
 			}),
+
+			// Open a saved session in this view (from Session Manager)
+			ws.on(
+				"agent-client:open-session-requested",
+				(
+					targetViewId?: string,
+					sessionId?: string,
+					cwd?: string,
+					agentId?: string,
+				) => {
+					if (targetViewId && targetViewId !== viewId) return;
+					if (!sessionId || !cwd) return;
+					void handleOpenSessionInViewRef.current(
+						sessionId,
+						cwd,
+						agentId,
+					);
+				},
+			),
+
+			// Start a new chat in a specific directory in this view
+			ws.on(
+				"agent-client:new-chat-in-directory",
+				(targetViewId?: string, cwd?: string) => {
+					if (targetViewId && targetViewId !== viewId) return;
+					if (!cwd) return;
+					void handleNewChatInDirectoryRef.current(cwd);
+				},
+			),
 		];
 
 		return () => {
@@ -1080,6 +1450,12 @@ export function ChatPanel({
 	const hasActivePermissionRef = useRef(agent.hasActivePermission);
 	const sessionHistoryLoadingRef = useRef(sessionHistory.loading);
 	const handleSendMessageRef = useRef(handleSendMessage);
+	const agentCwdRef = useRef(agentCwd);
+	agentCwdRef.current = agentCwd;
+	const sessionUsageRef = useRef(session.usage ?? null);
+	sessionUsageRef.current = session.usage ?? null;
+	const modeLabelRef = useRef(currentModeLabel);
+	modeLabelRef.current = currentModeLabel;
 	inputValueRef.current = inputValue;
 	attachedFilesRef.current = attachedFiles;
 	isSessionReadyRef.current = isSessionReady;
@@ -1105,11 +1481,22 @@ export function ChatPanel({
 			},
 			getSessionTitle: () =>
 				computeSessionTitle(
-					sessionIdRef.current,
+					openingSessionIdRef.current ?? sessionIdRef.current,
 					plugin.settingsService.getSnapshot().savedSessions ?? [],
 					messagesRef.current,
 				),
-			getSessionId: () => sessionIdRef.current,
+			// Report the session being opened the instant an open begins, so the
+			// Session Manager treats this view as that session (hides its saved
+			// twin) without waiting for the async load to settle.
+			getSessionId: () =>
+				openingSessionIdRef.current ?? sessionIdRef.current,
+			// Only a live turn or a pending permission counts — a session that
+			// is merely loading may be taken over.
+			hasWorkInProgress: () =>
+				isSendingRef.current || hasActivePermissionRef.current,
+			getWorkingDirectory: () => agentCwdRef.current,
+			getUsage: () => sessionUsageRef.current,
+			getModeLabel: () => modeLabelRef.current,
 			getInputState: () => ({
 				text: inputValueRef.current,
 				files: attachedFilesRef.current,
@@ -1199,18 +1586,77 @@ export function ChatPanel({
 			/>
 		);
 
-	const cwdBanner =
-		agentCwd !== vaultPath && !isSameDirectory(agentCwd, vaultPath) ? (
-			<div className="agent-client-cwd-banner" title={agentCwd}>
-				<span
-					className="agent-client-cwd-banner-icon"
-					ref={(el) => {
-						if (el) setIcon(el, "folder-open");
-					}}
+	// Always shown, even at the vault root: which folder a session runs in is
+	// easy to lose track of, and this doubles as the handle for the session
+	// drawer. The full path stays in the tooltip when it's abbreviated.
+	const cwdBanner = (
+		<div
+			className={`agent-client-cwd-banner is-clickable ${isSessionDrawerOpen ? "is-active" : ""}`}
+			title={`${agentCwd}\n(Click to browse sessions)`}
+			role="button"
+			aria-expanded={isSessionDrawerOpen}
+			tabIndex={0}
+			onClick={() => {
+				// Closing hands focus back to the composer — the banner is
+				// focusable (tabIndex=0), so after a toggle-close it would
+				// otherwise keep swallowing keystrokes.
+				if (isSessionDrawerOpen) focusComposer();
+				setIsSessionDrawerOpen((open) => !open);
+			}}
+			onKeyDown={(e) => {
+				if (e.key === "Enter" || e.key === " ") {
+					e.preventDefault();
+					if (isSessionDrawerOpen) focusComposer();
+					setIsSessionDrawerOpen((open) => !open);
+				}
+			}}
+		>
+			<span
+				className="agent-client-cwd-banner-icon"
+				ref={(el) => {
+					if (el) setIcon(el, "folder-open");
+				}}
+			/>
+			<span className="agent-client-cwd-banner-path">
+				{formatCwdForDisplay(
+					agentCwd,
+					settings.displaySettings.cwdDisplay,
+				)}
+			</span>
+			<span
+				className="agent-client-cwd-banner-chevron"
+				ref={(el) => {
+					if (el)
+						setIcon(
+							el,
+							isSessionDrawerOpen ? "chevron-down" : "chevron-right",
+						);
+				}}
+			/>
+		</div>
+	);
+
+	// Session list as a drawer inside this pane rather than a separate leaf, so
+	// switching sessions never costs you the chat you're looking at.
+	const sessionDrawer = isSessionDrawerOpen ? (
+		<>
+			<div
+				className="agent-client-session-drawer-scrim"
+				onClick={() => {
+					setIsSessionDrawerOpen(false);
+					// The click landed on an element that's about to unmount;
+					// without this, focus falls to <body> and keys go dead.
+					focusComposer();
+				}}
+			/>
+			<div className="agent-client-session-drawer">
+				<SessionManagerComponent
+					plugin={plugin}
+					onNavigate={() => setIsSessionDrawerOpen(false)}
 				/>
-				<span className="agent-client-cwd-banner-path">{agentCwd}</span>
 			</div>
-		) : null;
+		</>
+	) : null;
 
 	const messageListElement = (
 		<MessageList
@@ -1224,6 +1670,7 @@ export function ChatPanel({
 			terminalClient={terminalClientRef.current}
 			onApprovePermission={agent.approvePermission}
 			hasActivePermission={agent.hasActivePermission}
+			showToolCalls={settings.displaySettings.showToolCalls}
 		/>
 	);
 
@@ -1249,6 +1696,17 @@ export function ChatPanel({
 				void handleSetConfigOption(configId, value)
 			}
 			usage={session.usage}
+			onOpenRewind={handleOpenRewind}
+			showToolCalls={settings.displaySettings.showToolCalls}
+			onToggleShowToolCalls={() =>
+				void plugin.settingsService.updateSettings({
+					displaySettings: {
+						...settings.displaySettings,
+						showToolCalls:
+							!settings.displaySettings.showToolCalls,
+					},
+				})
+			}
 			supportsImages={session.promptCapabilities?.image ?? false}
 			agentId={session.agentId}
 			// Controlled component props (for broadcast commands)
@@ -1300,6 +1758,7 @@ export function ChatPanel({
 		>
 			{headerElement}
 			{cwdBanner}
+			{sessionDrawer}
 			{messageListElement}
 			{inputAreaElement}
 		</div>

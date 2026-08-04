@@ -155,6 +155,22 @@ export class FloatingViewContainer implements IChatViewContainer {
 		return this.callbacks?.getSessionId() ?? null;
 	}
 
+	hasWorkInProgress(): boolean {
+		return this.callbacks?.hasWorkInProgress() ?? false;
+	}
+
+	getWorkingDirectory(): string {
+		return this.callbacks?.getWorkingDirectory() ?? "";
+	}
+
+	getUsage() {
+		return this.callbacks?.getUsage() ?? null;
+	}
+
+	getModeLabel(): string | null {
+		return this.callbacks?.getModeLabel() ?? null;
+	}
+
 	closeContainer(): void {
 		this.unmount();
 	}

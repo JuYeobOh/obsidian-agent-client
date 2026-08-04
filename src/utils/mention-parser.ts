@@ -117,10 +117,14 @@ export function extractMentionedNotes(
 		}
 		seen.add(noteTitle);
 
-		// Find the file by basename
-		const file = noteMentionService
+		// Find the file by basename. When a note and a PDF share a basename
+		// (report.md vs report.pdf), prefer the markdown note so a bare
+		// [[report]] stays predictable; PDFs are normally distinct names.
+		const matches = noteMentionService
 			.getAllFiles()
-			.find((f: TFile) => f.basename === noteTitle);
+			.filter((f: TFile) => f.basename === noteTitle);
+		const file =
+			matches.find((f: TFile) => f.extension === "md") ?? matches[0];
 
 		result.push({ noteTitle, file });
 	}

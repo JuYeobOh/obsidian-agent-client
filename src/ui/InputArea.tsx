@@ -217,6 +217,12 @@ export interface InputAreaProps {
 	onConfigOptionChange?: (configId: string, value: string) => void;
 	/** Context window usage (shown as percentage indicator) */
 	usage?: SessionUsage;
+	/** Whether tool-call blocks are shown in the chat */
+	showToolCalls: boolean;
+	/** Toggle the show-tool-calls display setting */
+	onToggleShowToolCalls: () => void;
+	/** Open the rewind picker (Esc when idle) */
+	onOpenRewind: () => void;
 	/** Whether the agent supports image attachments */
 	supportsImages?: boolean;
 	/** Current agent ID (used to clear images on agent switch) */
@@ -276,6 +282,9 @@ export function InputArea({
 	onModeChange,
 	configOptions,
 	onConfigOptionChange,
+	showToolCalls,
+	onToggleShowToolCalls,
+	onOpenRewind,
 	usage,
 	supportsImages = false,
 	agentId,
@@ -840,6 +849,38 @@ export function InputArea({
 				return;
 			}
 
+			// Esc / Ctrl+C interrupt an in-progress generation (like Claude
+			// Code). Dropdown Esc is handled above, so this only fires when no
+			// suggestion popup is open.
+			if (isSending) {
+				const isEsc = e.key === "Escape";
+				const isCtrlC =
+					(e.ctrlKey || e.metaKey) &&
+					(e.key === "c" || e.key === "C");
+				if (isEsc || isCtrlC) {
+					// Don't hijack a genuine copy of selected text.
+					if (isCtrlC) {
+						const ta = textareaRef.current;
+						if (ta && ta.selectionStart !== ta.selectionEnd) {
+							return;
+						}
+					}
+					e.preventDefault();
+					void onStopGeneration();
+					return;
+				}
+			}
+
+			// Esc when idle opens the rewind picker. stopPropagation keeps
+			// Obsidian from also handling Esc and moving focus out of the
+			// sidebar into the editor.
+			if (!isSending && e.key === "Escape") {
+				e.preventDefault();
+				e.stopPropagation();
+				onOpenRewind();
+				return;
+			}
+
 			// Handle input history navigation (ArrowUp/ArrowDown)
 			if (handleHistoryKeyDown(e, textareaRef.current)) {
 				return;
@@ -871,6 +912,8 @@ export function InputArea({
 			isSending,
 			isButtonDisabled,
 			handleSendOrStop,
+			onStopGeneration,
+			onOpenRewind,
 			settings.sendMessageShortcut,
 		],
 	);
@@ -997,6 +1040,83 @@ export function InputArea({
 				/>
 			)}
 
+			{/* Active note (auto-mention) — its own bordered box above the input.
+			    The WHOLE box toggles auto-mention on/off (struck through, not
+			    removed); the +/✕ button stays as the visual affordance. */}
+			{mentions.activeNote && (
+				<div
+					className="agent-client-active-note-box is-clickable"
+					role="button"
+					tabIndex={0}
+					aria-pressed={!mentions.isAutoMentionDisabled}
+					title={
+						mentions.isAutoMentionDisabled
+							? "Enable auto-mention"
+							: "Disable auto-mention"
+					}
+					onClick={() =>
+						mentions.toggleAutoMention(
+							!mentions.isAutoMentionDisabled,
+						)
+					}
+					onKeyDown={(e) => {
+						if (e.key === "Enter" || e.key === " ") {
+							e.preventDefault();
+							mentions.toggleAutoMention(
+								!mentions.isAutoMentionDisabled,
+							);
+						}
+					}}
+				>
+					<span
+						className="agent-client-active-note-icon"
+						ref={(el) => {
+							if (el) setIcon(el, "file-text");
+						}}
+					/>
+					<span
+						className={`agent-client-mention-badge ${mentions.isAutoMentionDisabled ? "agent-client-disabled" : ""}`}
+					>
+						@{mentions.activeNote.name}
+						{mentions.activeNote.selection && (
+							<span className="agent-client-selection-indicator">
+								{":"}
+								{mentions.activeNote.selection.from.line + 1}
+								-{mentions.activeNote.selection.to.line + 1}
+							</span>
+						)}
+					</span>
+					<button
+						className="agent-client-active-note-dismiss clickable-icon"
+						aria-label={
+							mentions.isAutoMentionDisabled
+								? "Enable auto-mention"
+								: "Disable auto-mention"
+						}
+						title={
+							mentions.isAutoMentionDisabled
+								? "Enable auto-mention"
+								: "Disable auto-mention"
+						}
+						onClick={(e) => {
+							// The box also toggles — without this, the click
+							// bubbles up and toggles twice (a net no-op).
+							e.stopPropagation();
+							mentions.toggleAutoMention(
+								!mentions.isAutoMentionDisabled,
+							);
+						}}
+						ref={(el) => {
+							if (el)
+								setIcon(
+									el,
+									mentions.isAutoMentionDisabled ? "plus" : "x",
+								);
+						}}
+					/>
+				</div>
+			)}
+
 			{/* Input Box - flexbox container with border */}
 			<div
 				className={`agent-client-chat-input-box ${isDraggingOver ? "agent-client-dragging-over" : ""}`}
@@ -1005,49 +1125,6 @@ export function InputArea({
 				onDragLeave={handleDragLeave}
 				onDrop={(e) => void handleDrop(e)}
 			>
-				{/* Auto-mention Badge */}
-				{mentions.activeNote && (
-					<button
-						className="agent-client-auto-mention-inline"
-						onClick={() =>
-							mentions.toggleAutoMention(
-								!mentions.isAutoMentionDisabled,
-							)
-						}
-						title={
-							mentions.isAutoMentionDisabled
-								? "Enable auto-mention"
-								: "Temporarily disable auto-mention"
-						}
-					>
-						<span
-							className={`agent-client-mention-badge ${mentions.isAutoMentionDisabled ? "agent-client-disabled" : ""}`}
-						>
-							@{mentions.activeNote.name}
-							{mentions.activeNote.selection && (
-								<span className="agent-client-selection-indicator">
-									{":"}
-									{mentions.activeNote.selection.from.line +
-										1}
-									-{mentions.activeNote.selection.to.line + 1}
-								</span>
-							)}
-						</span>
-						<span
-							className="agent-client-auto-mention-toggle-icon"
-							ref={(el) => {
-								if (el) {
-									const iconName =
-										mentions.isAutoMentionDisabled
-											? "plus"
-											: "x";
-									setIcon(el, iconName);
-								}
-							}}
-						/>
-					</button>
-				)}
-
 				{/* Textarea with Hint Overlay */}
 				<div className="agent-client-textarea-wrapper">
 					<textarea
@@ -1079,7 +1156,7 @@ export function InputArea({
 				{/* Attachment Preview Strip (images + file references) */}
 				<AttachmentStrip files={attachedFiles} onRemove={removeFile} />
 
-				{/* Input Actions (Config Options / Mode Selector / Model Selector + Send Button) */}
+				{/* Composer controls — bottom row inside the box (Claude Code style) */}
 				<InputToolbar
 					isSending={isSending}
 					isButtonDisabled={isButtonDisabled}
@@ -1093,6 +1170,8 @@ export function InputArea({
 					onConfigOptionChange={onConfigOptionChange}
 					usage={usage}
 					isSessionReady={isSessionReady}
+					showToolCalls={showToolCalls}
+					onToggleShowToolCalls={onToggleShowToolCalls}
 				/>
 			</div>
 		</div>

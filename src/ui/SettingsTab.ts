@@ -3,14 +3,17 @@ import {
 	PluginSettingTab,
 	Setting,
 	DropdownComponent,
+	FileSystemAdapter,
 	Platform,
 	SecretComponent,
 } from "obsidian";
 import type AgentClientPlugin from "../plugin";
+import { formatCwdForDisplay } from "../plugin";
 import type {
 	CustomAgentSettings,
 	AgentEnvVar,
 	ChatViewLocation,
+	CwdDisplay,
 } from "../plugin";
 import { resolveCommandPath, resolveCommandPathInWsl } from "../utils/paths";
 import {
@@ -206,6 +209,42 @@ export class AgentClientSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						await this.plugin.settingsService.updateSettings({
 							chatViewLocation: value as ChatViewLocation,
+						});
+					}),
+			);
+
+		// Show each option's effect on this vault's own path — a baked-in example
+		// folder only means something to the vault it was written from. Falls
+		// back to a bare label where there is no real path to demonstrate on
+		// (mobile / non-FileSystemAdapter).
+		const adapter = this.app.vault.adapter;
+		const examplePath =
+			adapter instanceof FileSystemAdapter ? adapter.getBasePath() : null;
+		const cwdOptionLabel = (label: string, mode: CwdDisplay): string =>
+			examplePath
+				? `${label} (${formatCwdForDisplay(examplePath, mode)})`
+				: label;
+
+		new Setting(containerEl)
+			.setName("Folder path in chat header")
+			.setDesc(
+				"How much of the session's working directory to show. The full path is always in the tooltip.",
+			)
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption("name", cwdOptionLabel("Folder only", "name"))
+					.addOption(
+						"parent",
+						cwdOptionLabel("Folder with parent", "parent"),
+					)
+					.addOption("full", "Full path")
+					.setValue(this.plugin.settings.displaySettings.cwdDisplay)
+					.onChange(async (value) => {
+						await this.plugin.settingsService.updateSettings({
+							displaySettings: {
+								...this.plugin.settings.displaySettings,
+								cwdDisplay: value as CwdDisplay,
+							},
 						});
 					}),
 			);
@@ -814,6 +853,21 @@ export class AgentClientSettingTab extends PluginSettingTab {
 		// ─────────────────────────────────────────────────────────────────────
 
 		new Setting(containerEl).setName("Developer").setHeading();
+
+		new Setting(containerEl)
+			.setName("Check for agent updates")
+			.setDesc(
+				"Query npm for newer adapter versions and show an update notice in the chat. Turn off to silence the notice.",
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.checkAgentUpdates)
+					.onChange(async (value) => {
+						await this.plugin.settingsService.updateSettings({
+							checkAgentUpdates: value,
+						});
+					}),
+			);
 
 		new Setting(containerEl)
 			.setName("Debug mode")

@@ -1,12 +1,12 @@
 import * as React from "react";
-const { useRef, useState, useEffect, useCallback } = React;
+const { useRef, useState, useEffect, useCallback, useMemo } = React;
 
 import type { ChatMessage } from "../types/chat";
 import type { AcpClient } from "../acp/acp-client";
 import type AgentClientPlugin from "../plugin";
 import type { IChatViewHost } from "./view-host";
 import { setIcon } from "obsidian";
-import { MessageBubble } from "./MessageBubble";
+import { MessageBubble, isMessageVisible } from "./MessageBubble";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 // How long (ms) after a tab is re-shown we refuse to shrink measured item
@@ -43,6 +43,8 @@ export interface MessageListProps {
 	) => Promise<void>;
 	/** Whether a permission request is currently pending */
 	hasActivePermission: boolean;
+	/** Whether tool-call blocks are shown (threaded so memo'd bubbles refresh) */
+	showToolCalls: boolean;
 }
 
 /**
@@ -58,7 +60,7 @@ export interface MessageListProps {
  * - Loading indicator
  */
 export function MessageList({
-	messages,
+	messages: allMessages,
 	isSending,
 	isSessionReady,
 	isRestoringSession,
@@ -68,7 +70,17 @@ export function MessageList({
 	terminalClient,
 	onApprovePermission,
 	hasActivePermission,
+	showToolCalls,
 }: MessageListProps) {
+	// Hidden tool calls render nothing, so a message made up only of them would
+	// still occupy a virtualized row (and its spacing) and read as a big gap.
+	// Drop them here so every downstream index, key and scroll target refers to
+	// a row that is actually on screen.
+	const messages = useMemo(
+		() => allMessages.filter((m) => isMessageVisible(m, showToolCalls)),
+		[allMessages, showToolCalls],
+	);
+
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [isAtBottom, setIsAtBottom] = useState(true);
 	const isAtBottomRef = useRef(true);
@@ -273,6 +285,7 @@ export function MessageList({
 								plugin={plugin}
 								terminalClient={terminalClient}
 								onApprovePermission={onApprovePermission}
+								showToolCalls={showToolCalls}
 							/>
 						</div>
 					);

@@ -16,6 +16,7 @@ import {
 } from "./ui/FloatingChatView";
 import { FloatingButtonContainer } from "./ui/FloatingButton";
 import { ChatViewRegistry } from "./services/view-registry";
+import type { IChatViewContainer } from "./services/view-registry";
 import {
 	createSettingsService,
 	type SettingsService,
@@ -70,6 +71,27 @@ export type ChatViewLocation =
 	| "editor-tab"
 	| "editor-split";
 
+/**
+ * How much of the agent's working directory to show in the chat header.
+ * For "/home/me/vault/notes":
+ * - 'name': just the folder ("notes")
+ * - 'parent': folder with its parent ("vault/notes")
+ * - 'full': the absolute path
+ */
+export type CwdDisplay = "name" | "parent" | "full";
+
+/** Trim an absolute path down to the configured number of trailing segments. */
+export function formatCwdForDisplay(cwd: string, mode: CwdDisplay): string {
+	if (mode === "full") return cwd;
+	const segments = cwd
+		.replace(/\\/g, "/")
+		.replace(/\/+$/, "")
+		.split("/")
+		.filter((s) => s.length > 0);
+	if (segments.length === 0) return cwd;
+	return segments.slice(mode === "name" ? -1 : -2).join("/");
+}
+
 export interface AgentClientPluginSettings {
 	gemini: GeminiAgentSettings;
 	claude: ClaudeAgentSettings;
@@ -93,6 +115,8 @@ export interface AgentClientPluginSettings {
 		tables: boolean;
 	};
 	debugMode: boolean;
+	/** Whether to query npm for adapter updates and show the update overlay */
+	checkAgentUpdates: boolean;
 	nodePath: string;
 	exportSettings: {
 		defaultFolder: string;
@@ -120,9 +144,24 @@ export interface AgentClientPluginSettings {
 		maxSelectionLength: number;
 		showEmojis: boolean;
 		fontSize: number | null;
+		/** Whether tool calls (function/edit blocks) are shown in the chat */
+		showToolCalls: boolean;
+		/** How much of the working-directory path the chat header shows */
+		cwdDisplay: CwdDisplay;
 	};
 	// Locally saved session metadata (for agents without session/list support)
 	savedSessions: SavedSessionInfo[];
+	// Session Manager folder grouping state
+	sessionManager: {
+		/** Pinned folder paths (normalized keys) — pinned groups sort first */
+		pinnedFolders: string[];
+		/** Folder alias display names (normalized key → alias) */
+		folderAliases: Record<string, string>;
+		/** Collapsed folder groups (normalized keys) */
+		collapsedFolders: string[];
+		/** User-defined display order of folder groups (normalized keys) */
+		folderOrder: string[];
+	};
 	// Last used model per agent (agentId → modelId)
 	lastUsedModels: Record<string, string>;
 	// Last used mode per agent (agentId → modeId)
@@ -174,6 +213,7 @@ const DEFAULT_SETTINGS: AgentClientPluginSettings = {
 		tables: true,
 	},
 	debugMode: false,
+	checkAgentUpdates: true,
 	nodePath: "",
 	exportSettings: {
 		defaultFolder: "Agent Client",
@@ -197,8 +237,16 @@ const DEFAULT_SETTINGS: AgentClientPluginSettings = {
 		maxSelectionLength: 10000,
 		showEmojis: true,
 		fontSize: null,
+		showToolCalls: true,
+		cwdDisplay: "parent",
 	},
 	savedSessions: [],
+	sessionManager: {
+		pinnedFolders: [],
+		folderAliases: {},
+		collapsedFolders: [],
+		folderOrder: [],
+	},
 	lastUsedModels: {},
 	lastUsedModes: {},
 	lastUsedConfigOptions: {},
@@ -220,6 +268,63 @@ export default class AgentClientPlugin extends Plugin {
 	private _acpClients: Map<string, AcpClient> = new Map();
 	/** Floating button container (independent from chat view instances) */
 	private floatingButton: FloatingButtonContainer | null = null;
+	/**
+	 * Init payload for views created via openChatViewForSession, keyed by
+	 * leaf id. Delivered through this side channel (consumed in the ChatView
+	 * constructor) because Obsidian may call setState() only after React has
+	 * mounted, which would miss mount-time initial values.
+	 */
+	private pendingViewInit = new Map<
+		string,
+		{
+			agentId?: string;
+			cwd?: string;
+			sessionId?: string;
+			deliberate?: boolean;
+		}
+	>();
+
+	/**
+	 * The "main" chat view — the one whose tab icon is always visible even
+	 * when inactive, alongside deliberately created (Ctrl-click) tabs. Only
+	 * auto-created background views hide their icon. The badge transfers to
+	 * the replacement view when a plain session click can't reuse the busy
+	 * primary (see openChatViewForSession), so the visible-icon set stays
+	 * "one main + the tabs the user asked for".
+	 */
+	private primaryViewId: string | null = null;
+
+	getPrimaryViewId(): string | null {
+		return this.primaryViewId;
+	}
+
+	setPrimaryView(viewId: string | null): void {
+		if (this.primaryViewId === viewId) return;
+		this.primaryViewId = viewId;
+		for (const view of this.viewRegistry.getAll()) {
+			view.refreshTabHeader?.();
+		}
+	}
+
+	/**
+	 * Keep the primary badge valid: it must sit on a live, non-deliberate
+	 * sidebar view whenever one exists. Called when views open, close, or
+	 * learn their deliberate flag from restored state.
+	 */
+	reconcilePrimaryView(): void {
+		const candidates = this.viewRegistry
+			.getAll()
+			.filter((v) => v.viewType === "sidebar");
+		const isDeliberate = (v: IChatViewContainer) =>
+			v.isDeliberateTab?.() ?? false;
+		const current = candidates.find(
+			(v) => v.viewId === this.primaryViewId,
+		);
+		if (current && !isDeliberate(current)) return;
+		const next =
+			candidates.find((v) => !isDeliberate(v)) ?? candidates[0] ?? null;
+		this.setPrimaryView(next?.viewId ?? null);
+	}
 	/** Counter for generating unique floating chat instance IDs */
 	private floatingChatCounter = 0;
 
@@ -525,7 +630,9 @@ export default class AgentClientPlugin extends Plugin {
 			return;
 		}
 
-		const leaf = workspace.getLeftLeaf(false);
+		// Right side, alongside the chat: the manager is how you move between
+		// sessions, so it belongs in the same pane you're reading them in.
+		const leaf = workspace.getRightLeaf(false);
 		if (leaf) {
 			await leaf.setViewState({
 				type: VIEW_TYPE_SESSION_MANAGER,
@@ -660,6 +767,80 @@ export default class AgentClientPlugin extends Plugin {
 				}
 			}, 0);
 		}
+	}
+
+	/**
+	 * Open a chat view targeting a specific working directory and/or a
+	 * previously saved session. Used by the Session Manager's folder tree.
+	 *
+	 * - `cwd` only: opens a new chat working in that directory.
+	 * - `cwd` + `sessionId`: opens a view and restores that session once ready.
+	 */
+	async openChatViewForSession(options: {
+		agentId?: string;
+		cwd?: string;
+		sessionId?: string;
+		/** True when the user explicitly asked for an extra view (Ctrl/Cmd
+		 *  click, "Open in new view") — its tab icon stays visible. Absent for
+		 *  auto-created background views, whose icon hides unless active. */
+		deliberate?: boolean;
+	}): Promise<void> {
+		const leaf = this.createNewChatLeaf(true);
+		if (!leaf) {
+			getLogger().warn("[AgentClient] Failed to create new leaf");
+			return;
+		}
+
+		// Side channel consumed by the ChatView constructor (see pendingViewInit)
+		const leafId = (leaf as { id?: string }).id;
+		if (leafId) {
+			this.pendingViewInit.set(leafId, {
+				agentId: options.agentId ?? this.settings.defaultAgentId,
+				cwd: options.cwd,
+				sessionId: options.sessionId,
+				deliberate: options.deliberate,
+			});
+		}
+
+		await leaf.setViewState({
+			type: VIEW_TYPE_CHAT,
+			active: true,
+			state: {
+				initialAgentId: options.agentId ?? this.settings.defaultAgentId,
+				initialCwd: options.cwd,
+				initialSessionId: options.sessionId,
+				deliberateTab: options.deliberate,
+			},
+		});
+
+		// A plain (non-Ctrl) open lands here only because the primary view was
+		// busy — the new view is now what the user works in, so the always-
+		// visible badge moves to it. The busy old view keeps generating as a
+		// hidden background tab. Deliberate views keep their own icon instead.
+		if (!options.deliberate && leafId) {
+			this.setPrimaryView(leafId);
+		}
+
+		await this.app.workspace.revealLeaf(leaf);
+	}
+
+	/**
+	 * Consume the pending init payload for a view (one-shot).
+	 * Called from the ChatView constructor.
+	 */
+	consumePendingViewInit(viewId: string):
+		| {
+				agentId?: string;
+				cwd?: string;
+				sessionId?: string;
+				deliberate?: boolean;
+		  }
+		| undefined {
+		const pending = this.pendingViewInit.get(viewId);
+		if (pending) {
+			this.pendingViewInit.delete(viewId);
+		}
+		return pending;
 	}
 
 	/**
@@ -1042,6 +1223,10 @@ export default class AgentClientPlugin extends Plugin {
 				};
 			})(),
 			debugMode: bool(raw.debugMode, D.debugMode),
+			checkAgentUpdates: bool(
+				raw.checkAgentUpdates,
+				D.checkAgentUpdates,
+			),
 			nodePath: str(raw.nodePath, D.nodePath),
 			exportSettings: {
 				defaultFolder: str(
@@ -1119,10 +1304,32 @@ export default class AgentClientPlugin extends Plugin {
 				),
 				showEmojis: bool(rd.showEmojis, D.displaySettings.showEmojis),
 				fontSize: parseChatFontSize(rd.fontSize),
+				showToolCalls: bool(
+					rd.showToolCalls,
+					D.displaySettings.showToolCalls,
+				),
+				cwdDisplay: enumVal(
+					rd.cwdDisplay,
+					["name", "parent", "full"],
+					D.displaySettings.cwdDisplay,
+				),
 			},
 			savedSessions: Array.isArray(raw.savedSessions)
 				? (raw.savedSessions as SavedSessionInfo[])
 				: D.savedSessions,
+			sessionManager: (() => {
+				const rsm = obj(raw.sessionManager) ?? {};
+				const strArray = (v: unknown): string[] =>
+					Array.isArray(v)
+						? v.filter((x): x is string => typeof x === "string")
+						: [];
+				return {
+					pinnedFolders: strArray(rsm.pinnedFolders),
+					folderAliases: strRecord(rsm.folderAliases),
+					collapsedFolders: strArray(rsm.collapsedFolders),
+					folderOrder: strArray(rsm.folderOrder),
+				};
+			})(),
 			lastUsedModels: strRecord(raw.lastUsedModels),
 			lastUsedModes: strRecord(raw.lastUsedModes),
 			lastUsedConfigOptions: nestedStrRecord(raw.lastUsedConfigOptions),

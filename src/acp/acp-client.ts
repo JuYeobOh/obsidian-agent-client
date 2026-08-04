@@ -485,6 +485,7 @@ export class AcpClient {
 	 */
 	async newSession(workingDirectory: string): Promise<SessionResult> {
 		const connection = this.requireConnection();
+		this.syncWorkingDirectory(workingDirectory);
 
 		try {
 			this.logger.log("[AcpClient] Creating new session...");
@@ -694,6 +695,35 @@ export class AcpClient {
 	}
 
 	/**
+	 * Working directory currently in effect for this connection.
+	 *
+	 * This is NOT just bookkeeping: it is the fallback cwd for tool/terminal
+	 * execution (see AcpHandler) when the agent doesn't specify one.
+	 */
+	getWorkingDirectory(): string | null {
+		return this.currentConfig?.workingDirectory ?? null;
+	}
+
+	/**
+	 * Point this connection at a different folder without respawning it.
+	 *
+	 * One process can host sessions from multiple folders — session/new and
+	 * session/load each carry their own cwd. The only piece that would go stale
+	 * is the tool/terminal fallback cwd above, so keeping it in sync here lets
+	 * us switch folders by swapping the session instead of paying for a full
+	 * process restart. Called from the session entry points below, so no caller
+	 * can forget it.
+	 */
+	private syncWorkingDirectory(cwd: string): void {
+		if (!this.currentConfig || !cwd) return;
+		if (this.currentConfig.workingDirectory === cwd) return;
+		this.logger.log(
+			`[AcpClient] Working directory now: ${cwd} (was ${this.currentConfig.workingDirectory})`,
+		);
+		this.currentConfig = { ...this.currentConfig, workingDirectory: cwd };
+	}
+
+	/**
 	 * DEPRECATED: Use setSessionConfigOption instead.
 	 */
 	async setSessionMode(sessionId: string, modeId: string): Promise<void> {
@@ -891,6 +921,7 @@ export class AcpClient {
 	 */
 	async loadSession(sessionId: string, cwd: string): Promise<SessionResult> {
 		const connection = this.requireConnection();
+		this.syncWorkingDirectory(cwd);
 
 		// Set sessionId before await so replay updates pass the sessionId filter
 		this.currentSessionId = sessionId;
@@ -931,6 +962,7 @@ export class AcpClient {
 		cwd: string,
 	): Promise<SessionResult> {
 		const connection = this.requireConnection();
+		this.syncWorkingDirectory(cwd);
 
 		// Set sessionId before await so any updates pass the sessionId filter
 		this.currentSessionId = sessionId;
@@ -968,6 +1000,7 @@ export class AcpClient {
 	 */
 	async forkSession(sessionId: string, cwd: string): Promise<SessionResult> {
 		const connection = this.requireConnection();
+		this.syncWorkingDirectory(cwd);
 
 		try {
 			this.logger.log(`[AcpClient] Forking session: ${sessionId}...`);
