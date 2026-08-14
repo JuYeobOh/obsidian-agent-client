@@ -1,9 +1,9 @@
 {
-	"id": "agent-client",
-	"name": "Agent Client",
+	"id": "agent-client-fork",
+	"name": "Agent Client (fork)",
 	"version": "0.11.0",
 	"minAppVersion": "1.11.4",
-	"description": "Chat with AI agents via the Agent Client Protocol directly from your vault.",
+	"description": "Personal fork of RAIT-09's Agent Client. Chat with AI agents via the Agent Client Protocol directly from your vault.",
 	"author": "RAIT-09",
 	"authorUrl": "https://github.com/RAIT-09",
 	"fundingUrl": "https://www.buymeacoffee.com/rait09",

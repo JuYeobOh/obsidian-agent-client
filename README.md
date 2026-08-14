@@ -104,15 +104,17 @@ npm run build
 Then copy `main.js`, `manifest.json` and `styles.css` into your vault:
 
 ```
-<vault>/.obsidian/plugins/agent-client/
+<vault>/.obsidian/plugins/agent-client-fork/
 ```
 
-and reload Obsidian (`Ctrl+R`).
+and restart Obsidian.
 
-> This fork keeps the original's plugin id (`agent-client`), so it **replaces**
-> the original rather than sitting beside it. If you have the real plugin
-> installed, this overwrites it — and its settings and saved sessions, in
-> `data.json`, carry over as-is.
+> This fork uses its own plugin id (`agent-client-fork`), so it installs
+> **alongside** the original rather than replacing it — and Obsidian never
+> offers to "update" it back to the community-registry version, which would
+> silently overwrite the fork. Settings and saved sessions live in that folder's
+> `data.json`; to carry them over from an existing install, copy its `data.json`
+> across.
 
 Requires the agent CLI itself; see the
 [original's documentation](https://rait-09.github.io/obsidian-agent-client/) for
