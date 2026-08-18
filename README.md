@@ -1,4 +1,4 @@
-<h1 align="center">Obsidian Claude Code</h1>
+<h1 align="center">Agent Console</h1>
 
 <p align="center">
   <img src="https://img.shields.io/github/license/RAIT-09/obsidian-agent-client" alt="License">
