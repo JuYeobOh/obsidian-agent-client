@@ -1,9 +1,9 @@
 {
 	"id": "agent-client-fork",
-	"name": "Agent Client (fork)",
+	"name": "Obsidian Claude Code",
 	"version": "0.11.0",
 	"minAppVersion": "1.11.4",
-	"description": "Personal fork of RAIT-09's Agent Client. Chat with AI agents via the Agent Client Protocol directly from your vault.",
+	"description": "Claude Code inside Obsidian. A personal fork of RAIT-09's Agent Client, maintained at github.com/JuYeobOh/obsidian-agent-client.",
 	"author": "RAIT-09",
 	"authorUrl": "https://github.com/RAIT-09",
 	"fundingUrl": "https://www.buymeacoffee.com/rait09",
