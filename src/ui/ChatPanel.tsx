@@ -271,7 +271,6 @@ export function ChatPanel({
 	// ============================================================
 	// Local State
 	// ============================================================
-	const [isUpdateAvailable, setIsUpdateAvailable] = useState(false);
 	// Session list drawer, slid over this pane from the left
 	const [isSessionDrawerOpen, setIsSessionDrawerOpen] = useState(false);
 
@@ -1038,18 +1037,6 @@ export function ChatPanel({
 	}, [logger]);
 
 	// ============================================================
-	// Effects - Update Check
-	// ============================================================
-	useEffect(() => {
-		plugin
-			.checkForUpdates()
-			.then(setIsUpdateAvailable)
-			.catch((error) => {
-				logger.error("Failed to check for updates:", error);
-			});
-	}, [plugin, logger]);
-
-	// ============================================================
 	// Effects - Agent Update Check
 	// ============================================================
 	useEffect(() => {
@@ -1566,7 +1553,6 @@ export function ChatPanel({
 			<ChatHeader
 				variant="sidebar"
 				agentLabel={activeAgentLabel}
-				isUpdateAvailable={isUpdateAvailable}
 				onNewChat={() => void handleNewChatWithPersist()}
 				onExportChat={() => void handleExportChat()}
 				onShowMenu={handleShowSidebarMenu}
@@ -1578,7 +1564,6 @@ export function ChatPanel({
 				agentLabel={activeAgentLabel}
 				availableAgents={availableAgents}
 				currentAgentId={session.agentId}
-				isUpdateAvailable={isUpdateAvailable}
 				onAgentChange={(agentId) => void handleSwitchAgent(agentId)}
 				onShowMenu={handleShowFloatingMenu}
 				onMinimize={onMinimize}

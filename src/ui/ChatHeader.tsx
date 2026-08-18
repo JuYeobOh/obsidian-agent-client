@@ -16,7 +16,6 @@ export interface SidebarHeaderProps {
 	/** Display name of the active agent */
 	agentLabel: string;
 	/** Whether a plugin update is available */
-	isUpdateAvailable: boolean;
 	/** Callback to create a new chat session */
 	onNewChat: () => void;
 	/** Callback to export the chat */
@@ -39,7 +38,6 @@ export interface FloatingHeaderProps {
 	/** Current agent ID */
 	currentAgentId: string;
 	/** Whether a plugin update is available */
-	isUpdateAvailable: boolean;
 	/** Callback to switch agent */
 	onAgentChange: (agentId: string) => void;
 	/** Callback to show the More menu at the click position */
@@ -102,7 +100,6 @@ function NavActionButton({
  */
 function SidebarHeader({
 	agentLabel,
-	isUpdateAvailable,
 	onNewChat,
 	onExportChat,
 	onShowMenu,
@@ -114,11 +111,6 @@ function SidebarHeader({
 				<span className="agent-client-chat-view-header-title">
 					{agentLabel}
 				</span>
-				{isUpdateAvailable && (
-					<span className="agent-client-chat-view-header-update">
-						Plugin update available!
-					</span>
-				)}
 				<NavActionButton
 					icon="plus"
 					label="New chat"
@@ -163,7 +155,6 @@ function FloatingHeader({
 	agentLabel,
 	availableAgents,
 	currentAgentId,
-	isUpdateAvailable,
 	onAgentChange,
 	onShowMenu,
 	onMinimize,
@@ -249,11 +240,6 @@ function FloatingHeader({
 					</span>
 				)}
 			</div>
-			{isUpdateAvailable && (
-				<p className="agent-client-chat-view-header-update">
-					Plugin update available!
-				</p>
-			)}
 			<div className="agent-client-inline-header-actions">
 				<HeaderButton
 					iconName="more-vertical"
