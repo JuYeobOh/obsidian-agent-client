@@ -149,6 +149,25 @@ export function MessageList({
 	virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () =>
 		isAtBottomRef.current;
 
+	// Popout windows: Obsidian moves this very DOM node into another window's
+	// document. The virtualizer derives its ResizeObserver from the window it
+	// first saw and never re-checks — the scroll element's identity didn't
+	// change — so in the new window no row is ever measured and everything
+	// stacks at the 80px estimate, overlapping. Dropping the scroll element
+	// makes the next render's _willUpdate tear the old observers down and
+	// rebind to the element's current window. Re-attached when the container
+	// swaps between the empty-state div and the list div.
+	const [, rebindVirtualizer] = useState(0);
+	const isEmpty = messages.length === 0;
+	useEffect(() => {
+		const el = containerRef.current;
+		if (!el) return;
+		return el.onWindowMigrated(() => {
+			virtualizer.scrollElement = null;
+			rebindVirtualizer((n) => n + 1);
+		});
+	}, [virtualizer, isEmpty]);
+
 	// ============================================================
 	// Scroll management
 	// ============================================================

@@ -182,6 +182,63 @@ const ActiveSessionItem = React.memo(function ActiveSessionItem({
 					});
 			});
 
+			// Deleting the session you're looking at: pick the folder's next
+			// most recent session FIRST, then swap this view onto it (or a new
+			// chat when there is none) so the view isn't left on a transcript
+			// that no longer exists. Disabled mid-turn — the swap would orphan
+			// the running answer.
+			const sessionId = view.getSessionId();
+			if (sessionId) {
+				menu.addSeparator();
+				menu.addItem((item) => {
+					item.setTitle("Delete")
+						.setIcon("trash-2")
+						.setDisabled(view.hasWorkInProgress())
+						.onClick(() => {
+							new ConfirmDeleteModal(
+								plugin.app,
+								view.getSessionTitle(),
+								async () => {
+									const cwd = view.getWorkingDirectory();
+									const key = normalizeFolderKey(cwd);
+									const next = plugin.settingsService
+										.getSavedSessions()
+										.filter(
+											(s) =>
+												s.sessionId !== sessionId &&
+												s.cwd &&
+												normalizeFolderKey(s.cwd) === key,
+										)
+										.sort(
+											(a, b) =>
+												new Date(b.updatedAt).getTime() -
+												new Date(a.updatedAt).getTime(),
+										)[0];
+									await plugin.settingsService.deleteSession(
+										sessionId,
+									);
+									const ws = plugin.app.workspace;
+									if (next) {
+										ws.trigger(
+											"agent-client:open-session-requested",
+											view.viewId,
+											next.sessionId,
+											next.cwd,
+											next.agentId,
+										);
+									} else {
+										ws.trigger(
+											"agent-client:new-chat-in-directory",
+											view.viewId,
+											cwd,
+										);
+									}
+								},
+							).open();
+						});
+				});
+			}
+
 			menu.showAtPosition(position);
 		},
 		[plugin, view],
